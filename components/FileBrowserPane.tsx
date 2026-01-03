@@ -6,7 +6,7 @@ import Breadcrumbs from './Breadcrumbs';
 import SortFilterControl from './SortFilterControl';
 import { 
   ChevronLeft, ChevronRight, Grid, List, Search, Filter, 
-  ArrowUp, RotateCw, MoreVertical, Loader2
+  ArrowUp, RotateCw, MoreVertical, Loader2, Trash2
 } from 'lucide-react';
 import { useFilePane } from '../hooks/useFilePane';
 
@@ -19,6 +19,7 @@ interface FileBrowserPaneProps {
   onContextMenu: (e: React.MouseEvent, file: FileNode) => void;
   onDropFile: (sourceId: string, targetFolderId: string) => void;
   onSearch?: () => void;
+  onEmptyTrash?: () => void;
   className?: string;
 }
 
@@ -31,6 +32,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
   onContextMenu,
   onDropFile,
   onSearch,
+  onEmptyTrash,
   className
 }) => {
   const [showFilter, setShowFilter] = useState(false);
@@ -47,6 +49,8 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
   const [pullY, setPullY] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const PULL_THRESHOLD = 80;
+
+  const isTrashLocation = currentPath.some(p => p.id === 'trash');
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (containerRef.current && containerRef.current.scrollTop === 0) {
@@ -135,6 +139,15 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
          </div>
 
          <div className="flex items-center gap-1">
+             {isTrashLocation && files.length > 0 && (
+                <button 
+                  onClick={onEmptyTrash} 
+                  className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 mr-1"
+                  title="Empty Trash"
+                >
+                   <Trash2 size={18} />
+                </button>
+             )}
              <button onClick={onSearch} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800">
                 <Search size={18} />
              </button>
@@ -196,7 +209,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
 
       {/* Footer Status */}
       <div className="px-3 py-1 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center text-[10px] text-slate-500 dark:text-slate-400">
-          <span>{files.length} items</span>
+          <span>{files.length} items {isTrashLocation ? '(Trash)' : ''}</span>
           <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : ''}</span>
       </div>
     </div>

@@ -227,6 +227,14 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleEmptyTrash = async () => {
+    if (confirm("Are you sure you want to permanently delete all items in the Recycle Bin? This action cannot be undone.")) {
+      await fileSystem.emptyTrash();
+      leftPane.refreshFiles();
+      rightPane.refreshFiles();
+    }
+  };
+
   const handleRestore = async () => {
     const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
     if (ids.length === 0) return;
@@ -493,6 +501,7 @@ const AppContent: React.FC = () => {
                     onContextMenu={(e, f) => handleContextMenu(e, f, 'left')}
                     onDropFile={handleDropMove}
                     onSearch={() => setShowSearch(true)}
+                    onEmptyTrash={handleEmptyTrash}
                  />
               </div>
               {(dualPaneEnabled || activePaneId === 'right') && (
@@ -506,6 +515,7 @@ const AppContent: React.FC = () => {
                       onContextMenu={(e, f) => handleContextMenu(e, f, 'right')}
                       onDropFile={handleDropMove}
                       onSearch={() => setShowSearch(true)}
+                      onEmptyTrash={handleEmptyTrash}
                    />
                 </div>
               )}

@@ -200,7 +200,7 @@ const FileItem: React.FC<{
           <div className={`p-3.5 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${
             file.type === 'folder' 
                ? (file.isProtected ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500' : 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500') 
-               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+               : (file.isTrash ? 'bg-red-100 dark:bg-red-900/20 text-red-500 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')
           }`}>
             <Icon size={36} strokeWidth={1.5} />
           </div>
@@ -225,8 +225,8 @@ const FileItem: React.FC<{
         <span className="text-xs font-medium text-center truncate w-full text-slate-700 dark:text-slate-300 px-0.5">
           {file.name}
         </span>
-        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium">
-          {file.type === 'folder' ? formatDate(file.updatedAt) : formatSize(file.size)}
+        <span className={`text-[10px] mt-0.5 font-medium ${file.isTrash ? 'text-red-400' : 'text-slate-400 dark:text-slate-500'}`}>
+          {file.isTrash ? `Deleted ${formatDate(file.updatedAt)}` : (file.type === 'folder' ? formatDate(file.updatedAt) : formatSize(file.size))}
         </span>
       </div>
     );
@@ -253,7 +253,7 @@ const FileItem: React.FC<{
        <div className={`relative p-2.5 rounded-xl flex-shrink-0 ${
           file.type === 'folder' 
             ? (file.isProtected ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500' : 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500')
-            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+            : (file.isTrash ? 'bg-red-100 dark:bg-red-900/20 text-red-500 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')
        }`}>
           <Icon size={24} strokeWidth={1.5} />
           
@@ -272,7 +272,11 @@ const FileItem: React.FC<{
            {file.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 font-medium">Hidden</span>}
          </div>
          <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-500 mt-0.5">
-           <span className="truncate">{formatDate(file.updatedAt)}</span>
+           {file.isTrash ? (
+             <span className="truncate text-red-400 font-medium">Deleted {formatDate(file.updatedAt)}</span>
+           ) : (
+             <span className="truncate">{formatDate(file.updatedAt)}</span>
+           )}
            <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
            <span className="flex-shrink-0">{file.type === 'folder' ? 'Folder' : formatSize(file.size)}</span>
          </div>
