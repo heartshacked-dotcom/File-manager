@@ -402,11 +402,11 @@ const AppContent: React.FC = () => {
   const isVaultProtected = activePane.currentPath.some(p => p.id === VAULT_FOLDER) && !vaultUnlocked;
 
   return (
-    <div className="flex h-screen w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans transition-colors duration-300">
+    <div className="flex h-[100dvh] w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans transition-colors duration-300">
       
       {/* Sidebar Navigation */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 flex flex-col`}>
-        <div className="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
+      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]`}>
+        <div className="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold mr-3 shadow-lg shadow-blue-500/20">N</div>
            <span className="text-xl font-bold tracking-tight">Nova</span>
         </div>
@@ -446,7 +446,7 @@ const AppContent: React.FC = () => {
            </button>
         </div>
         
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
             <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors">
                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -456,7 +456,7 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-         <header className="h-16 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 md:hidden z-20">
+         <header className="flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 md:hidden z-20 pt-[env(safe-area-inset-top)] h-[calc(4rem+env(safe-area-inset-top))] flex-shrink-0">
             <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 text-slate-600 dark:text-slate-400">
                <Menu size={24} />
             </button>
@@ -523,17 +523,17 @@ const AppContent: React.FC = () => {
          )}
 
          {!dualPaneEnabled && (
-           <div className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex">
-              <button onClick={() => setActivePaneId('left')} className={`flex-1 flex flex-col items-center justify-center ${activePaneId === 'left' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+           <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
+              <button onClick={() => setActivePaneId('left')} className={`flex-1 h-14 flex flex-col items-center justify-center ${activePaneId === 'left' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
                  <Layout size={20} /><span className="text-[10px] font-medium">Pane 1</span>
               </button>
-              <button onClick={() => setActivePaneId('right')} className={`flex-1 flex flex-col items-center justify-center ${activePaneId === 'right' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+              <button onClick={() => setActivePaneId('right')} className={`flex-1 h-14 flex flex-col items-center justify-center ${activePaneId === 'right' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
                  <Layout size={20} /><span className="text-[10px] font-medium">Pane 2</span>
               </button>
            </div>
          )}
          
-         <div className="absolute bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
+         <div className="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
             {clipboard && (
                <button onClick={handlePaste} className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-slate-900 dark:bg-slate-800 border border-slate-700 text-white rounded-full shadow-xl hover:scale-105 transition-transform">
                   <Clipboard size={18} /> <span>Paste {clipboard.mode}</span>
@@ -546,7 +546,7 @@ const AppContent: React.FC = () => {
 
          {/* Selection Toolbar */}
          {activePane.selectedIds.size > 0 && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
+            <div className="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
                <span className="px-3 font-bold text-sm whitespace-nowrap">{activePane.selectedIds.size} selected</span>
                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
                {activePane.currentPath.some(p => p.id === 'trash') ? (
@@ -600,7 +600,16 @@ const AppContent: React.FC = () => {
       )}
       
       <AuthDialog isOpen={modal.type === 'AUTH'} mode={vaultPinHash ? 'ENTER' : 'CREATE'} onSuccess={handleAuthSuccess} onClose={() => setModal({ type: null })} />
-      <SettingsDialog isOpen={modal.type === 'SETTINGS'} onClose={() => setModal({ type: null })} showHidden={activePane.showHidden} onToggleHidden={(v) => { leftPane.setShowHidden(v); rightPane.setShowHidden(v); }} showProtected={activePane.showHidden} onToggleProtected={() => {}} onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }} />
+      <SettingsDialog 
+        isOpen={modal.type === 'SETTINGS'} 
+        onClose={() => setModal({ type: null })} 
+        onResetPin={() => { 
+           setVaultPinHash(null); 
+           localStorage.removeItem('nova_vault_pin'); 
+           setModal({ type: 'AUTH' }); 
+        }} 
+        permStatus={permStatus}
+      />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Name" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} actionLabel="Create" />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={activePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); activePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
       

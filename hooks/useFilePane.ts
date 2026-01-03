@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { FileNode, ViewMode, SortField, SortDirection, DateFilter, SizeFilter, FileType } from '../types';
 import { fileSystem } from '../services/filesystem';
@@ -14,9 +15,13 @@ export const useFilePane = (initialPathId: string = 'root_internal', permissionG
   const [lastFocusedId, setLastFocusedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // View State
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.GRID);
-  const [sortField, setSortField] = useState<SortField>(SortField.NAME);
+  // View State - Initialize from LocalStorage
+  const [viewMode, setViewMode] = useState<ViewMode>(() => 
+    (localStorage.getItem('nova_default_view') as ViewMode) || ViewMode.GRID
+  );
+  const [sortField, setSortField] = useState<SortField>(() => 
+    (localStorage.getItem('nova_default_sort') as SortField) || SortField.NAME
+  );
   const [sortDirection, setSortDirection] = useState<SortDirection>(SortDirection.ASC);
   
   // Filter State
@@ -24,7 +29,20 @@ export const useFilePane = (initialPathId: string = 'root_internal', permissionG
   const [filterType, setFilterType] = useState<FileType | 'all'>('all');
   const [filterDate, setFilterDate] = useState<DateFilter>('ALL');
   const [filterSize, setFilterSize] = useState<SizeFilter>('ALL');
-  const [showHidden, setShowHidden] = useState(false);
+  const [showHidden, setShowHidden] = useState(() => 
+    localStorage.getItem('nova_show_hidden') === 'true'
+  );
+
+  // Listen for global settings changes
+  useEffect(() => {
+    const handleSettingsChange = () => {
+      setShowHidden(localStorage.getItem('nova_show_hidden') === 'true');
+      // Optionally update other defaults if dynamic switching is desired, 
+      // though typically viewMode is per-pane and persistent across navigation.
+    };
+    window.addEventListener('nova_settings_changed', handleSettingsChange);
+    return () => window.removeEventListener('nova_settings_changed', handleSettingsChange);
+  }, []);
 
   // --- Actions ---
 

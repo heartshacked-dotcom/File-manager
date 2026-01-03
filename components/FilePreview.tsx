@@ -234,7 +234,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, url, content, onClose, 
     <div className="fixed inset-0 z-[100] bg-black flex flex-col animate-in fade-in duration-300">
       
       {/* Header Overlay */}
-      <div className={`absolute top-0 left-0 right-0 z-20 transition-transform duration-300 bg-gradient-to-b from-black/80 to-transparent ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
+      <div className={`absolute top-0 left-0 right-0 z-20 transition-transform duration-300 bg-gradient-to-b from-black/80 to-transparent pt-[env(safe-area-inset-top)] ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="flex items-center justify-between p-4 pt-4">
            <div className="flex items-center gap-3 min-w-0">
               <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 text-white transition-colors">
@@ -252,7 +252,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, url, content, onClose, 
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-hidden relative w-full h-full">
+      <div className="flex-1 overflow-hidden relative w-full h-full pb-[env(safe-area-inset-bottom)]">
          {loading && (
            <div className="absolute inset-0 flex items-center justify-center z-50">
              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
