@@ -50,7 +50,9 @@ class AndroidFileSystem {
 
   async openSettings() {
     try {
-      await App.openSettings();
+      // App.openSettings() is not available in standard @capacitor/app.
+      // To implement this, install 'capacitor-native-settings' and use it here.
+      console.warn("Opening settings is not supported without additional plugins.");
     } catch (e) {
       console.error("Failed to open settings", e);
     }
@@ -189,7 +191,6 @@ class AndroidFileSystem {
     const parentPath = id.substring(0, id.lastIndexOf('/'));
     const newPath = parentPath ? `${parentPath}/${newName}` : newName;
     
-    // Debug logging
     console.debug(`[Nova] Renaming file. From: ${id}, To: ${newPath}`);
 
     try {
@@ -240,13 +241,43 @@ class AndroidFileSystem {
 
   async move(ids: string[], targetParentId: string): Promise<void> {
     const targetPath = (targetParentId === 'root' || targetParentId === 'root_internal') ? '' : targetParentId;
+    
     for (const id of ids) {
        const name = id.split('/').pop();
-       await Filesystem.rename({
-         from: id,
-         to: targetPath ? `${targetPath}/${name}` : name!,
-         directory: Directory.ExternalStorage
-       });
+       if (!name) continue;
+
+       const destPath = targetPath ? `${targetPath}/${name}` : name;
+       
+       // Prevent moving to same location
+       if (id === destPath) continue;
+
+       try {
+         // Try standard rename (fast move)
+         await Filesystem.rename({
+           from: id,
+           to: destPath,
+           directory: Directory.ExternalStorage
+         });
+       } catch (err) {
+          console.warn(`[Nova] Fast move failed for ${id}. Attempting copy/delete fallback.`);
+          
+          // Fallback: Copy then Delete (Robust Move)
+          try {
+             await Filesystem.copy({
+               from: id,
+               to: destPath,
+               directory: Directory.ExternalStorage
+             });
+             
+             await Filesystem.deleteFile({
+               path: id,
+               directory: Directory.ExternalStorage
+             });
+          } catch (fallbackErr: any) {
+             console.error("[Nova] Move fallback failed", fallbackErr);
+             throw new Error(`Failed to move ${name}. ${fallbackErr.message || 'Access denied or file exists.'}`);
+          }
+       }
     }
   }
 

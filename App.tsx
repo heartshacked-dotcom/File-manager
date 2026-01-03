@@ -318,6 +318,7 @@ const App: React.FC = () => {
     try {
       await fileSystem.move([sourceId], targetFolderId);
       refreshFiles();
+      setSelectedIds(new Set()); // Clear selection after drag move
     } catch (e: any) {
       alert("Move failed: " + e.message);
     }
