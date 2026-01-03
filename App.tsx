@@ -18,6 +18,7 @@ import SearchScreen from './components/SearchScreen';
 import AuthDialog from './components/AuthDialog';
 import SettingsDialog from './components/SettingsDialog';
 import PermissionScreen from './components/PermissionScreen';
+import CompressionModal from './components/CompressionModal';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Settings, Trash2, Copy, Scissors, 
@@ -31,6 +32,12 @@ interface PreviewState {
   file: FileNode;
   url?: string;
   content?: string;
+}
+
+interface CompressionState {
+  isOpen: boolean;
+  mode: 'COMPRESS' | 'EXTRACT';
+  files: FileNode[];
 }
 
 const AppContent: React.FC = () => {
@@ -59,6 +66,7 @@ const AppContent: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string, paneId: PaneId } | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
+  const [compressionState, setCompressionState] = useState<CompressionState>({ isOpen: false, mode: 'COMPRESS', files: [] });
   const [showStorage, setShowStorage] = useState(false);
   const [storageStats, setStorageStats] = useState({ used: 0, total: 0 });
 
@@ -120,10 +128,12 @@ const AppContent: React.FC = () => {
            return;
         }
         if (file.type === 'archive' || file.name.endsWith('.zip')) {
-           if (confirm("Extract this archive?")) {
-              await fileSystem.extract(file.id);
-              pane.refreshFiles();
-           }
+           // Open Advanced Extract Modal
+           setCompressionState({
+             isOpen: true,
+             mode: 'EXTRACT',
+             files: [file]
+           });
            return;
         }
 
@@ -211,16 +221,18 @@ const AppContent: React.FC = () => {
     setModal({ type: null });
   };
 
-  const handleCompress = async (name: string) => {
-    if (!name) return;
+  const triggerCompress = () => {
     const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
     if (ids.length === 0) return;
-    try {
-       await fileSystem.compress(ids, name);
-       activePane.refreshFiles();
-       activePane.setSelectedIds(new Set());
-       setModal({ type: null });
-    } catch(e: any) { alert("Compression failed: " + e.message); }
+    
+    const filesToCompress = activePane.files.filter(f => ids.includes(f.id));
+    
+    setCompressionState({
+      isOpen: true,
+      mode: 'COMPRESS',
+      files: filesToCompress
+    });
+    setModal({ type: null }); // Close input dialog if open (redundant safety)
   };
 
   const handleShare = async () => {
@@ -295,7 +307,7 @@ const AppContent: React.FC = () => {
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
       case 'encrypt': setModal({ type: 'ENCRYPT', targetId }); break;
-      case 'compress': setModal({ type: 'COMPRESS', targetId }); break;
+      case 'compress': triggerCompress(); break;
       case 'share': handleShare(); break;
       case 'bookmark': 
          await fileSystem.toggleBookmark(targetId);
@@ -510,6 +522,17 @@ const AppContent: React.FC = () => {
         onReveal={handleReveal}
       />
 
+      <CompressionModal 
+        isOpen={compressionState.isOpen}
+        mode={compressionState.mode}
+        files={compressionState.files}
+        onClose={() => setCompressionState(prev => ({ ...prev, isOpen: false }))}
+        onSuccess={() => {
+           activePane.refreshFiles();
+           activePane.setSelectedIds(new Set());
+        }}
+      />
+
       {showStorage && (
          <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 animate-in slide-in-from-bottom-full duration-300">
             <div className="p-4">
@@ -523,7 +546,6 @@ const AppContent: React.FC = () => {
       <SettingsDialog isOpen={modal.type === 'SETTINGS'} onClose={() => setModal({ type: null })} showHidden={activePane.showHidden} onToggleHidden={(v) => { leftPane.setShowHidden(v); rightPane.setShowHidden(v); }} showProtected={activePane.showHidden} onToggleProtected={() => {}} onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }} />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Name" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} actionLabel="Create" />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={activePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); activePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
-      <InputDialog isOpen={modal.type === 'COMPRESS'} title="Compress" defaultValue="archive.zip" onClose={() => setModal({ type: null })} onSubmit={handleCompress} actionLabel="Compress" />
       <InputDialog isOpen={modal.type === 'ENCRYPT' || modal.type === 'DECRYPT'} title={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} placeholder="Password" onClose={() => setModal({ type: null })} onSubmit={handleEncryption} actionLabel={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} />
       
       {previewState && <FilePreview file={previewState.file} url={previewState.url} content={previewState.content} onClose={() => setPreviewState(null)} onOpenExternal={() => fileSystem.openFile(previewState.file)} />}

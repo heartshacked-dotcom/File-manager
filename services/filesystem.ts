@@ -377,12 +377,10 @@ class AndroidFileSystem {
     const signal = this.searchController.signal;
 
     const results: FileNode[] = [];
-    // Prioritize these common folders for performance
     const queue: string[] = ['', 'Download', 'DCIM', 'Documents', 'Pictures', 'Music', 'Movies']; 
     const searchedPaths = new Set<string>();
     const queryLower = options.query.toLowerCase();
 
-    // Limits to prevent freezing
     const MAX_ITEMS_CHECKED = 1500;
     const MAX_RESULTS = 50;
     let itemsChecked = 0;
@@ -404,7 +402,6 @@ class AndroidFileSystem {
             const type = getFileType(f.name, f.type === 'directory');
             const isMatch = f.name.toLowerCase().includes(queryLower);
             
-            // Check Match & Filters
             if (isMatch) {
                let passesFilter = true;
                
@@ -425,9 +422,7 @@ class AndroidFileSystem {
                }
             }
 
-            // Enqueue subfolders if not deep
             if (f.type === 'directory' && !f.name.startsWith('.')) {
-               // Simple depth heuristic: don't go too deep if path is long
                if (fullPath.split('/').length < 6) {
                  queue.push(fullPath);
                }
@@ -501,22 +496,41 @@ class AndroidFileSystem {
     }
   }
 
-  async compress(ids: string[], archiveName: string): Promise<void> {
-    const parentId = ids[0].substring(0, ids[0].lastIndexOf('/'));
+  // Updated compress to accept target path and report progress
+  async compress(ids: string[], targetParentId: string, archiveName: string, onProgress?: (p: number) => void): Promise<void> {
+    const targetPath = (targetParentId === 'root' || targetParentId === 'root_internal') ? '' : targetParentId;
     const zipName = archiveName.endsWith('.zip') ? archiveName : `${archiveName}.zip`;
-    const path = parentId ? `${parentId}/${zipName}` : zipName;
-    await new Promise(resolve => setTimeout(resolve, 800));
-    await Filesystem.writeFile({ path: path, data: 'PK...', directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
+    const fullPath = targetPath ? `${targetPath}/${zipName}` : zipName;
+
+    // Simulate progress
+    const totalSteps = 10;
+    for (let i = 1; i <= totalSteps; i++) {
+       await new Promise(resolve => setTimeout(resolve, 200));
+       if (onProgress) onProgress((i / totalSteps) * 100);
+    }
+    
+    await Filesystem.writeFile({ path: fullPath, data: 'PK...MOCKED_ARCHIVE_DATA', directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
   }
 
-  async extract(archiveId: string): Promise<void> {
-     const parentPath = archiveId.substring(0, archiveId.lastIndexOf('/'));
+  // Updated extract to accept target path and report progress
+  async extract(archiveId: string, targetParentId: string, onProgress?: (p: number) => void): Promise<void> {
      const fileName = archiveId.split('/').pop() || '';
      const folderName = fileName.replace(/\.(zip|rar|7z|tar|gz)$/i, '');
-     const targetPath = parentPath ? `${parentPath}/${folderName}` : folderName;
-     await new Promise(resolve => setTimeout(resolve, 1000));
-     await Filesystem.mkdir({ path: targetPath, directory: Directory.ExternalStorage, recursive: true });
-     await Filesystem.writeFile({ path: `${targetPath}/readme.txt`, data: 'Extracted content', directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
+     
+     // Resolve target directory
+     const targetBasePath = (targetParentId === 'root' || targetParentId === 'root_internal') ? '' : targetParentId;
+     const extractPath = targetBasePath ? `${targetBasePath}/${folderName}` : folderName;
+
+     await Filesystem.mkdir({ path: extractPath, directory: Directory.ExternalStorage, recursive: true });
+
+     // Simulate extraction progress
+     const totalSteps = 10;
+     for (let i = 1; i <= totalSteps; i++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (onProgress) onProgress((i / totalSteps) * 100);
+     }
+
+     await Filesystem.writeFile({ path: `${extractPath}/extracted_readme.txt`, data: 'Extracted content from ' + fileName, directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
   }
 
   async toggleProtection(ids: string[], protect: boolean): Promise<void> {
