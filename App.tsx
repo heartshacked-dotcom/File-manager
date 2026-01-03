@@ -7,12 +7,19 @@ import FileList from './components/FileList';
 import Breadcrumbs from './components/Breadcrumbs';
 import StorageChart from './components/StorageChart';
 import ContextMenu from './components/ContextMenu';
+import FilePreview from './components/FilePreview';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Search, Grid, List, Plus, Trash2, Copy, Scissors, 
   CornerUpLeft, Settings, Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
   Home, Download, Music, Video, Image, FileText, HardDrive, RefreshCw
 } from 'lucide-react';
+
+interface PreviewState {
+  file: FileNode;
+  url?: string;
+  content?: string;
+}
 
 const App: React.FC = () => {
   // --- State ---
@@ -28,6 +35,7 @@ const App: React.FC = () => {
   const [showHidden, setShowHidden] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string } | null>(null);
+  const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   
   // UI State
   const [showStorage, setShowStorage] = useState(false);
@@ -96,7 +104,27 @@ const App: React.FC = () => {
       setCurrentPath(prev => [...prev, file]);
       setSearchQuery('');
     } else {
-      await fileSystem.openFile(file);
+      // Handle File Preview
+      try {
+        if (['image', 'video', 'audio'].includes(file.type)) {
+           const url = await fileSystem.getFileUrl(file.id);
+           setPreviewState({ file, url });
+        } else if (file.name.match(/\.(txt|md|json|js|css|xml|html)$/i) || file.type === 'document') {
+           // Basic text check
+           if (file.name.match(/\.(pdf|doc|docx|xls)$/i)) {
+              // Open native for heavy docs
+              await fileSystem.openFile(file);
+           } else {
+              const content = await fileSystem.readTextFile(file.id);
+              setPreviewState({ file, content });
+           }
+        } else {
+           await fileSystem.openFile(file);
+        }
+      } catch (e) {
+        console.error("Preview failed, falling back to openFile", e);
+        await fileSystem.openFile(file);
+      }
     }
   };
 
@@ -402,6 +430,19 @@ const App: React.FC = () => {
       </main>
 
       {/* Modals & Menus */}
+      {previewState && (
+        <FilePreview 
+          file={previewState.file} 
+          url={previewState.url} 
+          content={previewState.content}
+          onClose={() => setPreviewState(null)}
+          onOpenExternal={() => {
+            fileSystem.openFile(previewState.file);
+            setPreviewState(null);
+          }}
+        />
+      )}
+
       {contextMenu && (
         <ContextMenu 
           x={contextMenu.x} y={contextMenu.y} 

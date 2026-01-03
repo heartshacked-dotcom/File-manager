@@ -1,7 +1,8 @@
 import { FileNode } from '../types';
 import { TOTAL_STORAGE } from '../constants';
-import { Filesystem, Directory, FileInfo } from '@capacitor/filesystem';
+import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
+import { Capacitor } from '@capacitor/core';
 
 const TRASH_FOLDER = '.nova_trash';
 
@@ -10,9 +11,9 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
   if (isDir) return 'folder';
   const ext = filename.split('.').pop()?.toLowerCase();
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext || '')) return 'image';
-  if (['mp4', 'mkv', 'avi', 'mov'].includes(ext || '')) return 'video';
-  if (['mp3', 'wav', 'aac', 'flac'].includes(ext || '')) return 'audio';
-  if (['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx'].includes(ext || '')) return 'document';
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext || '')) return 'video';
+  if (['mp3', 'wav', 'aac', 'flac', 'ogg'].includes(ext || '')) return 'audio';
+  if (['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx', 'json', 'xml', 'js', 'ts', 'css', 'html'].includes(ext || '')) return 'document';
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) return 'archive';
   return 'unknown';
 };
@@ -44,14 +45,9 @@ class AndroidFileSystem {
   // Helper to convert Capacitor FileInfo to FileNode
   private convertToFileNode(file: FileInfo, parentId: string): FileNode {
     const isDir = file.type === 'directory';
-    // For navigation, we usually need the ID to be the path relative to ExternalStorage
-    // file.uri is the full path (file:///...).
-    // In this app, we will use the ID passed into readdir or derived from path logic.
-    // NOTE: This helper might be used in context where we know the path.
-    // However, readdir result in 'files' only has name.
     
     return {
-      id: '', // Placeholder, usually set by readdir loop using path + name
+      id: '', // Placeholder
       parentId: parentId,
       name: file.name,
       type: getFileType(file.name, isDir),
@@ -64,7 +60,6 @@ class AndroidFileSystem {
 
   async readdir(parentId: string | null, showHidden: boolean = false): Promise<FileNode[]> {
     // Root handling
-    // If parentId is null, 'root', or 'root_internal', we point to ExternalStorage root
     let path = '';
     let isTrash = false;
 
@@ -84,8 +79,6 @@ class AndroidFileSystem {
       });
 
       let nodes: FileNode[] = res.files.map(f => {
-        // Construct the ID as the relative path from ExternalStorage
-        // e.g., "DCIM", "DCIM/Camera"
         const relativePath = path ? `${path}/${f.name}` : f.name;
         
         return {
@@ -163,13 +156,10 @@ class AndroidFileSystem {
   }
 
   async search(query: string): Promise<FileNode[]> {
-    // Native deep search requires indexing or recursive scan.
-    // Returning empty array forces client-side filtering of current view in App.tsx
     return []; 
   }
 
   getStorageUsage() {
-    // Placeholder. In a real app, use a plugin to get StatFs
     return { used: 15 * 1024*1024*1024, total: TOTAL_STORAGE, breakdown: {} };
   }
 
@@ -242,13 +232,40 @@ class AndroidFileSystem {
     const targetPath = (targetParentId === 'root' || targetParentId === 'root_internal') ? '' : targetParentId;
     for (const id of ids) {
        const name = id.split('/').pop();
-       // Note: Filesystem.copy behaves differently on platforms. 
-       // Ensure target includes the filename.
        await Filesystem.copy({
          from: id,
          to: targetPath ? `${targetPath}/${name}` : name!,
          directory: Directory.ExternalStorage
        });
+    }
+  }
+
+  // --- Preview Helpers ---
+
+  async getFileUrl(id: string): Promise<string> {
+    try {
+      const uriResult = await Filesystem.getUri({
+        path: id,
+        directory: Directory.ExternalStorage
+      });
+      return Capacitor.convertFileSrc(uriResult.uri);
+    } catch (e) {
+      console.error('Failed to get file URI', e);
+      throw e;
+    }
+  }
+
+  async readTextFile(id: string): Promise<string> {
+    try {
+      const contents = await Filesystem.readFile({
+        path: id,
+        directory: Directory.ExternalStorage,
+        encoding: Encoding.UTF8
+      });
+      return contents.data as string;
+    } catch (e) {
+      console.error('Failed to read text file', e);
+      throw e;
     }
   }
 
@@ -275,6 +292,8 @@ class AndroidFileSystem {
      if (ext === 'txt') return 'text/plain';
      if (ext === 'html') return 'text/html';
      if (ext === 'json') return 'application/json';
+     if (ext === 'js') return 'application/javascript';
+     if (ext === 'css') return 'text/css';
      
      if (type === 'image') return 'image/*';
      if (type === 'video') return 'video/*';
