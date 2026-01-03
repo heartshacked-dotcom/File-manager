@@ -1,0 +1,5 @@
+{
+  "name": "Nova Explorer",
+  "description": "A next-generation file manager for Android and Web. Features a robust virtual file system, dual-pane inspired layout, storage analysis, and secure vault capabilities.",
+  "requestFramePermissions": []
+}
