@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { 
   FileNode, ClipboardState, ModalState, PaneId
 } from './types';
-import { fileSystem } from './services/filesystem';
+import { fileSystem, PermissionStatus } from './services/filesystem';
 import { SecurityService } from './services/security';
 import { useFilePane } from './hooks/useFilePane';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -14,6 +16,7 @@ import FilePreview from './components/FilePreview';
 import FolderTree from './components/FolderTree';
 import AuthDialog from './components/AuthDialog';
 import SettingsDialog from './components/SettingsDialog';
+import PermissionScreen from './components/PermissionScreen';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Settings, Trash2, Copy, Scissors, 
@@ -32,13 +35,16 @@ const AppContent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   
   // --- Global State ---
-  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [permStatus, setPermStatus] = useState<PermissionStatus>(PermissionStatus.UNKNOWN);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [vaultPinHash, setVaultPinHash] = useState<string | null>(localStorage.getItem('nova_vault_pin'));
   
   // --- Panes ---
-  const leftPane = useFilePane('root_internal', permissionGranted);
-  const rightPane = useFilePane('root_sd', permissionGranted);
+  // Only initialize panes if permissions are granted/scoped
+  const isReady = permStatus === PermissionStatus.GRANTED || permStatus === PermissionStatus.SCOPED;
+  
+  const leftPane = useFilePane('root_internal', isReady);
+  const rightPane = useFilePane('root_sd', isReady);
   const [activePaneId, setActivePaneId] = useState<PaneId>('left');
   const [dualPaneEnabled, setDualPaneEnabled] = useState(false);
   
@@ -53,15 +59,43 @@ const AppContent: React.FC = () => {
   const [showStorage, setShowStorage] = useState(false);
   const [storageStats, setStorageStats] = useState({ used: 0, total: 0 });
 
-  // --- Initialization ---
+  // --- Initialization & Permissions ---
+  const checkPermissions = useCallback(async () => {
+    const status = await fileSystem.init();
+    setPermStatus(status);
+  }, []);
+
   useEffect(() => {
-    const checkPermissions = async () => {
-      const granted = await fileSystem.init();
-      setPermissionGranted(granted);
-    };
     checkPermissions();
     if (window.innerWidth > 1024) setDualPaneEnabled(true);
-  }, []);
+    
+    // Listen for app resume (e.g. coming back from Settings)
+    const listener = CapacitorApp.addListener('appStateChange', async ({ isActive }) => {
+      if (isActive) {
+         // Check if permission was granted while in background
+         if (permStatus !== PermissionStatus.GRANTED) {
+             const verified = await fileSystem.confirmFullAccess();
+             if (verified) setPermStatus(PermissionStatus.GRANTED);
+         }
+      }
+    });
+
+    return () => { listener.then(l => l.remove()); }
+  }, [checkPermissions, permStatus]);
+
+  const handleGrantFull = async () => {
+     const launched = await fileSystem.requestFullAccess();
+     return launched;
+     // The actual state update happens on 'appStateChange' or next check
+  };
+
+  const handleGrantScoped = async () => {
+     const success = await fileSystem.requestScopedAccess();
+     if (success) {
+       setPermStatus(PermissionStatus.SCOPED);
+     }
+     return success;
+  };
 
   const handleOpen = async (file: FileNode, pane: ReturnType<typeof useFilePane>) => {
     if (file.type === 'folder') {
@@ -225,8 +259,17 @@ const AppContent: React.FC = () => {
      } catch (e: any) { alert(e.message); }
   };
 
-  if (permissionGranted === false) return <div className="p-8 text-center text-slate-500">Storage permission required.</div>;
-  if (permissionGranted === null) return <div className="p-8 text-center text-slate-500">Initializing...</div>;
+  // --- Rendering ---
+
+  if (!isReady) {
+    return (
+      <PermissionScreen 
+        isChecking={permStatus === PermissionStatus.UNKNOWN}
+        onGrantFull={handleGrantFull}
+        onGrantScoped={handleGrantScoped}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans transition-colors duration-300">

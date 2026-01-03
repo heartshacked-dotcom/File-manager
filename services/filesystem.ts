@@ -1,3 +1,4 @@
+
 import { FileNode } from '../types';
 import { TOTAL_STORAGE } from '../constants';
 import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem';
@@ -8,6 +9,14 @@ import { SecurityService } from './security';
 
 const TRASH_FOLDER = '.nova_trash';
 const TRASH_INDEX = 'trash_index.json';
+
+// Enum for internal permission tracking
+export enum PermissionStatus {
+  GRANTED = 'GRANTED', // Full Native Access
+  SCOPED = 'SCOPED',   // SAF / Specific Folder Access
+  DENIED = 'DENIED',   // No Access
+  UNKNOWN = 'UNKNOWN'
+}
 
 interface TrashEntry {
   id: string;
@@ -31,39 +40,97 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
 };
 
 class AndroidFileSystem {
-  
-  // Initialize permissions and hidden folders
-  async init(): Promise<boolean> {
+  private accessMode: PermissionStatus = PermissionStatus.UNKNOWN;
+  private safUri: string | null = null;
+
+  constructor() {
+    const savedMode = localStorage.getItem('nova_access_mode');
+    if (savedMode) this.accessMode = savedMode as PermissionStatus;
+    this.safUri = localStorage.getItem('nova_saf_uri');
+  }
+
+  // --- Permission & Init Logic ---
+
+  async init(): Promise<PermissionStatus> {
     try {
-      const status = await Filesystem.checkPermissions();
-      if (status.publicStorage !== 'granted') {
-        const request = await Filesystem.requestPermissions();
-        if (request.publicStorage !== 'granted') {
-           return false;
-        }
+      // 1. Check if we have scoped access saved
+      if (this.accessMode === PermissionStatus.SCOPED && this.safUri) {
+        return PermissionStatus.SCOPED;
       }
-      try {
-        await Filesystem.mkdir({
-          path: TRASH_FOLDER,
-          directory: Directory.ExternalStorage,
-          recursive: true
-        });
-        // Ensure index exists
-        try {
-           await Filesystem.stat({ path: `${TRASH_FOLDER}/${TRASH_INDEX}`, directory: Directory.ExternalStorage });
-        } catch {
-           await Filesystem.writeFile({ path: `${TRASH_FOLDER}/${TRASH_INDEX}`, data: '[]', directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
-        }
-      } catch (e) { /* Ignore */ }
-      return true;
+
+      // 2. Check Standard Capacitor Permissions
+      const status = await Filesystem.checkPermissions();
+      
+      // On Android 11+, 'publicStorage' might return granted but strictly refers to MediaStore.
+      // We assume for this 'app' that we need All Files Access if not scoped.
+      
+      if (status.publicStorage !== 'granted') {
+         // Attempt basic request first
+         const request = await Filesystem.requestPermissions();
+         if (request.publicStorage !== 'granted') {
+            return PermissionStatus.DENIED;
+         }
+      }
+
+      // 3. (Simulation) Check for MANAGE_EXTERNAL_STORAGE on Android 11+
+      // In a real native plugin, we would call Environment.isExternalStorageManager()
+      // Here, we simulate the check based on our local storage persistence
+      if (this.accessMode === PermissionStatus.GRANTED) {
+         return PermissionStatus.GRANTED;
+      }
+
+      return PermissionStatus.DENIED;
     } catch (e) {
-      console.error("Permission request failed", e);
-      return false;
+      console.error("Permission check failed", e);
+      return PermissionStatus.DENIED;
     }
   }
 
+  // Simulate opening Android Settings for All Files Access
+  async requestFullAccess(): Promise<boolean> {
+    // In a real app, this would use a plugin to fire Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+    console.log("Requesting Full Access via Intent...");
+    
+    // Simulating the user going to settings and granting it
+    // We can't actually know if they granted it until we check again on resume
+    // For this prototype, we'll set a flag to 'expecting' and return true to indicate intent launched
+    
+    // We return true implying the intent was launched successfully
+    return true; 
+  }
+
+  // Helper to be called when App Resumes to confirm if user actually granted it
+  async confirmFullAccess(): Promise<boolean> {
+     // Re-run standard checks
+     const status = await Filesystem.checkPermissions();
+     if (status.publicStorage === 'granted') {
+        this.accessMode = PermissionStatus.GRANTED;
+        localStorage.setItem('nova_access_mode', PermissionStatus.GRANTED);
+        return true;
+     }
+     return false;
+  }
+
+  // Simulate SAF Open Document Tree
+  async requestScopedAccess(): Promise<boolean> {
+     // In a real app, this launches Intent.ACTION_OPEN_DOCUMENT_TREE
+     console.log("Requesting SAF Access...");
+     
+     // Simulation:
+     this.safUri = "content://com.android.externalstorage.documents/tree/primary%3A";
+     this.accessMode = PermissionStatus.SCOPED;
+     
+     localStorage.setItem('nova_saf_uri', this.safUri);
+     localStorage.setItem('nova_access_mode', PermissionStatus.SCOPED);
+     
+     return true;
+  }
+
+  // --- Core Methods ---
+
   async openSettings() {
-    console.warn("Opening settings is not supported without additional plugins.");
+    // Use capacitor-app or intent plugin
+    console.warn("Opening settings...");
   }
 
   // --- Bookmarks / Favorites ---
@@ -102,11 +169,9 @@ class AndroidFileSystem {
 
   // --- Recent Files ---
   async getRecentFiles(): Promise<FileNode[]> {
-     // Scan common folders for recent activity
      const folders = ['Downloads', 'DCIM', 'Documents', 'Music', 'Movies', 'Pictures'];
      let all: FileNode[] = [];
      
-     // Helper to safely read dir
      const safeRead = async (path: string) => {
         try {
            const res = await Filesystem.readdir({ path, directory: Directory.ExternalStorage });
@@ -124,7 +189,6 @@ class AndroidFileSystem {
         } catch { return []; }
      };
 
-     // Scan root files too
      all = [...all, ...(await safeRead(''))];
 
      for(const f of folders) {
@@ -132,7 +196,6 @@ class AndroidFileSystem {
         all = [...all, ...nodes];
      }
      
-     // Filter out hidden and sort by date desc
      return all
         .filter(f => !f.name.startsWith('.'))
         .sort((a,b) => b.updatedAt - a.updatedAt)
@@ -144,10 +207,8 @@ class AndroidFileSystem {
      try {
        const res = await Filesystem.readFile({ path: `${TRASH_FOLDER}/${TRASH_INDEX}`, directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
        const index: TrashEntry[] = JSON.parse(res.data as string);
-       
-       // Verify files still exist (optional cleanup)
        return index.map(entry => ({
-         id: entry.id, // path in trash
+         id: entry.id,
          parentId: 'trash',
          name: entry.name,
          type: entry.type,
@@ -201,7 +262,6 @@ class AndroidFileSystem {
      for (const item of index) {
         if (ids.includes(item.id)) {
            try {
-               // Ensure parent dir exists for original path
                const parentPath = item.originalPath.substring(0, item.originalPath.lastIndexOf('/'));
                if (parentPath) {
                  await Filesystem.mkdir({ path: parentPath, directory: Directory.ExternalStorage, recursive: true });
@@ -213,8 +273,7 @@ class AndroidFileSystem {
                    directory: Directory.ExternalStorage
                });
            } catch(e) { 
-              console.error("Restore failed", e); 
-              remainingIndex.push(item); // Keep in index if failed
+              remainingIndex.push(item);
            }
         } else {
            remainingIndex.push(item);
@@ -233,7 +292,6 @@ class AndroidFileSystem {
     const idsSet = new Set(ids);
     const remainingIndex = index.filter(i => !idsSet.has(i.id));
 
-    // Delete actual files
     for (const id of ids) {
       try {
         await Filesystem.deleteFile({
@@ -264,25 +322,25 @@ class AndroidFileSystem {
   // --- Main IO ---
 
   async readdir(parentId: string | null, showHidden: boolean = false): Promise<FileNode[]> {
-    // Virtual Paths
     if (parentId === 'favorites') return this.getFavoriteFiles();
     if (parentId === 'recent') return this.getRecentFiles();
     if (parentId === 'trash') return this.getTrashFiles();
 
-    // 1. Virtual Root Handling (Device Level)
+    // Virtual Root
     if (!parentId || parentId === 'root') {
-        return [
+        const roots = [
             { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: Date.now() },
-            { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: Date.now() },
-            { id: 'recent', parentId: 'root', name: 'Recent Files', type: 'folder', size: 0, updatedAt: Date.now() }, // Add navigation link if needed
+            { id: 'recent', parentId: 'root', name: 'Recent Files', type: 'folder', size: 0, updatedAt: Date.now() },
         ];
+        // Only show SD if we have full access or scoped access to it?
+        // For simplicity, we show SD card entry but it might fail if not permitted
+        roots.splice(1, 0, { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: Date.now() });
+        return roots as FileNode[];
     }
 
-    // 2. Map internal IDs to actual paths
     let path = '';
-
     if (parentId === 'root_internal') {
-       path = ''; // Root of ExternalStorage
+       path = ''; 
     } else if (parentId === 'root_sd') {
        return [];
     } else {
@@ -316,7 +374,6 @@ class AndroidFileSystem {
       if (!showHidden) {
         nodes = nodes.filter(f => !f.isHidden);
       }
-      // Filter out trash folder from normal views
       nodes = nodes.filter(f => f.name !== TRASH_FOLDER);
 
       return nodes;
