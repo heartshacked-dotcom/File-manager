@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { 
   Copy, Scissors, Trash2, Edit2, Info, Share2, 
-  ExternalLink, EyeOff, FolderOpen 
+  ExternalLink, EyeOff, FolderOpen, CopyPlus 
 } from 'lucide-react';
 
 interface ContextMenuProps {
@@ -28,7 +28,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, sing
 
   // Adjust position to not overflow screen
   const adjustedX = Math.min(x, window.innerWidth - 200);
-  const adjustedY = Math.min(y, window.innerHeight - 300);
+  const adjustedY = Math.min(y, window.innerHeight - 340);
 
   return (
     <div 
@@ -46,6 +46,9 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, sing
       </button>
       <button onClick={() => onAction('cut')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
         <Scissors size={16} /> Cut
+      </button>
+      <button onClick={() => onAction('duplicate')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+        <CopyPlus size={16} /> Duplicate
       </button>
       
       <div className="h-px bg-slate-700 my-1"></div>

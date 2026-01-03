@@ -21,6 +21,7 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
 
 class AndroidFileSystem {
   
+  // Initialize permissions and hidden folders
   async init(): Promise<boolean> {
     try {
       const status = await Filesystem.checkPermissions();
@@ -48,6 +49,21 @@ class AndroidFileSystem {
     console.warn("Opening settings is not supported without additional plugins.");
   }
 
+  // Helper to convert Capacitor FileInfo to FileNode
+  private convertToFileNode(file: FileInfo, parentId: string): FileNode {
+    const isDir = file.type === 'directory';
+    return {
+      id: '', // Placeholder
+      parentId: parentId,
+      name: file.name,
+      type: getFileType(file.name, isDir),
+      size: file.size,
+      updatedAt: file.mtime,
+      isTrash: false,
+      isHidden: file.name.startsWith('.')
+    };
+  }
+
   async readdir(parentId: string | null, showHidden: boolean = false): Promise<FileNode[]> {
     // 1. Virtual Root Handling (Device Level)
     if (!parentId || parentId === 'root') {
@@ -61,7 +77,6 @@ class AndroidFileSystem {
                 updatedAt: Date.now(),
                 isProtected: false 
             },
-            // Mock SD Card for UI demonstration (would require native plugin for real path)
             { 
                 id: 'root_sd', 
                 parentId: 'root', 
@@ -81,13 +96,11 @@ class AndroidFileSystem {
     if (parentId === 'root_internal') {
        path = ''; // Root of ExternalStorage
     } else if (parentId === 'root_sd') {
-       // Mock empty SD card
        return [];
     } else if (parentId === 'trash') {
        path = TRASH_FOLDER;
        isTrash = true;
     } else {
-       // It's a relative path (e.g. "DCIM/Camera")
        path = parentId;
     }
     
@@ -98,12 +111,11 @@ class AndroidFileSystem {
       });
 
       let nodes: FileNode[] = res.files.map(f => {
-        // Construct ID as relative path
         const relativePath = path ? `${path}/${f.name}` : f.name;
         
         return {
            id: relativePath,
-           parentId: parentId, // Use the ID passed in as parent
+           parentId: parentId, 
            name: f.name,
            type: getFileType(f.name, f.type === 'directory'),
            size: f.size,
@@ -155,7 +167,6 @@ class AndroidFileSystem {
     if (id === 'root_internal') return [{ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 }];
     if (id === 'root_sd') return [{ id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 }];
     
-    // id is a relative path like "DCIM/Camera"
     const parts = id.split('/');
     const trail: FileNode[] = [];
     let currentPath = '';
@@ -173,9 +184,7 @@ class AndroidFileSystem {
       });
     }
     
-    // Always prepend Internal Storage if we are in deep paths
     trail.unshift({ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 });
-    
     return trail;
   }
 
@@ -285,6 +294,39 @@ class AndroidFileSystem {
        await Filesystem.copy({
          from: id,
          to: targetPath ? `${targetPath}/${name}` : name!,
+         directory: Directory.ExternalStorage
+       });
+    }
+  }
+
+  async duplicate(ids: string[]): Promise<void> {
+    for (const id of ids) {
+       const parentPath = id.substring(0, id.lastIndexOf('/'));
+       const name = id.split('/').pop() || '';
+       const extIndex = name.lastIndexOf('.');
+       const base = extIndex !== -1 ? name.substring(0, extIndex) : name;
+       const ext = extIndex !== -1 ? name.substring(extIndex) : '';
+
+       let counter = 1;
+       let newName = `${base} copy${ext}`;
+       let newPath = parentPath ? `${parentPath}/${newName}` : newName;
+
+       // Basic existence check loop
+       while (true) {
+         try {
+            await Filesystem.stat({ path: newPath, directory: Directory.ExternalStorage });
+            counter++;
+            newName = `${base} copy ${counter}${ext}`;
+            newPath = parentPath ? `${parentPath}/${newName}` : newName;
+         } catch {
+            // Stat failed, meaning file doesn't exist, we can use this name
+            break; 
+         }
+       }
+
+       await Filesystem.copy({
+         from: id,
+         to: newPath,
          directory: Directory.ExternalStorage
        });
     }

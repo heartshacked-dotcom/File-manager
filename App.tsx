@@ -27,16 +27,15 @@ interface PreviewState {
 
 const App: React.FC = () => {
   // --- Navigation & History State ---
-  // historyStack stores the Breadcrumb path (FileNode[]) for each history step
   const [historyStack, setHistoryStack] = useState<FileNode[][]>([[]]);
   const [historyIndex, setHistoryIndex] = useState(0);
   
-  // Computed currentPath from history
   const currentPath = historyStack[historyIndex] || [];
   
   const [files, setFiles] = useState<FileNode[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.GRID);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastFocusedId, setLastFocusedId] = useState<string | null>(null);
   
   // Permission State
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
@@ -62,7 +61,6 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isTrashView, setIsTrashView] = useState(false);
 
-  // Derive active IDs for the Tree View from current path
   const activePathIds = useMemo(() => new Set(currentPath.map(n => n.id)), [currentPath]);
 
   // --- Initialization ---
@@ -70,8 +68,6 @@ const App: React.FC = () => {
     const checkPermissions = async () => {
       const granted = await fileSystem.init();
       setPermissionGranted(granted);
-      
-      // Initialize with Internal Storage as start point if granted
       if (granted) {
          const initialPath = await fileSystem.getPathNodes('root_internal');
          setHistoryStack([initialPath]);
@@ -82,7 +78,6 @@ const App: React.FC = () => {
   }, []);
 
   // --- Data Loading ---
-
   const refreshFiles = useCallback(async () => {
     try {
       const parentId = isTrashView ? 'trash' : (currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root');
@@ -100,6 +95,7 @@ const App: React.FC = () => {
     if (permissionGranted) {
       refreshFiles();
       setSelectedIds(new Set());
+      setLastFocusedId(null);
     }
   }, [refreshFiles, permissionGranted]);
 
@@ -149,20 +145,16 @@ const App: React.FC = () => {
   }, [files, searchQuery, filterType, filterDate, sortField, sortDirection]);
 
   // --- Navigation Actions ---
-
   const navigateTo = async (id: string) => {
     if (id === 'trash') {
       setIsTrashView(true);
       setShowStorage(false);
       return;
     }
-
-    // Special reset
     if (id === 'root') {
-       // Root means device selection
        setIsTrashView(false);
        setShowStorage(false);
-       const newPath: FileNode[] = []; // Empty path = root
+       const newPath: FileNode[] = []; 
        pushHistory(newPath);
        return;
     }
@@ -170,7 +162,6 @@ const App: React.FC = () => {
     setIsTrashView(false);
     setShowStorage(false);
 
-    // Don't navigate if we are already there
     const currentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
     if (currentId === id) return;
 
@@ -180,7 +171,6 @@ const App: React.FC = () => {
   };
 
   const pushHistory = (path: FileNode[]) => {
-    // Slice logic to support "branching" history if we navigated back then somewhere new
     const newStack = historyStack.slice(0, historyIndex + 1);
     newStack.push(path);
     setHistoryStack(newStack);
@@ -188,23 +178,13 @@ const App: React.FC = () => {
   };
 
   const handleBack = () => {
-    if (showStorage) {
-      setShowStorage(false);
-      return;
-    }
-    if (isTrashView) {
-      setIsTrashView(false);
-      return;
-    }
-    if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-    }
+    if (showStorage) { setShowStorage(false); return; }
+    if (isTrashView) { setIsTrashView(false); return; }
+    if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
   };
 
   const handleForward = () => {
-    if (historyIndex < historyStack.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-    }
+    if (historyIndex < historyStack.length - 1) setHistoryIndex(historyIndex + 1);
   };
 
   const handleNavigate = (id: string) => navigateTo(id);
@@ -237,17 +217,54 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSelect = (id: string, multi: boolean) => {
-    setSelectedIds(prev => {
-      const next = new Set(multi ? prev : []);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // --- Selection Logic ---
+  const handleSelect = (id: string, multi: boolean, range: boolean) => {
+    if (range && lastFocusedId) {
+      // Range selection logic
+      const sortedFiles = displayedFiles; // Use currently visible sort order
+      const startIdx = sortedFiles.findIndex(f => f.id === lastFocusedId);
+      const endIdx = sortedFiles.findIndex(f => f.id === id);
+
+      if (startIdx !== -1 && endIdx !== -1) {
+         const min = Math.min(startIdx, endIdx);
+         const max = Math.max(startIdx, endIdx);
+         const rangeIds = sortedFiles.slice(min, max + 1).map(f => f.id);
+         
+         setSelectedIds(prev => {
+            const next = new Set(prev);
+            // If dragging range, we usually add. 
+            // Standard OS behavior: Range select resets previous complex multi-selects unless ctrl held?
+            // Simplified: Add range to selection.
+            rangeIds.forEach(rid => next.add(rid));
+            return next;
+         });
+      }
+    } else if (multi) {
+       // Toggle selection
+       setSelectedIds(prev => {
+         const next = new Set(prev);
+         if (next.has(id)) next.delete(id);
+         else next.add(id);
+         return next;
+       });
+       setLastFocusedId(id);
+    } else {
+       // Single select (or start of new selection)
+       // Note: If long press triggered this with multi=true, it falls into previous block.
+       // This block is for cases where we might want to clear others?
+       // Usually in mobile, a long press just adds to selection if mode active.
+       // The FileList handles standard click vs long press logic.
+       // Here we assume "single select" implies clearing others if not modifier key.
+       // But if we are already in selection mode, single click usually acts as toggle.
+       // Handled in FileList logic mainly.
+       
+       // Fallback for direct "select this only"
+       setSelectedIds(new Set([id]));
+       setLastFocusedId(id);
+    }
   };
 
-  // --- Operations (Create, Delete, Copy, etc) --- 
-  // ... (Kept largely same, using navigateTo where applicable)
+  // --- Operations ---
 
   const handleCreateFolder = async (name: string) => {
     try {
@@ -286,6 +303,19 @@ const App: React.FC = () => {
       setModal({ type: null });
     } catch (e: any) {
       alert("Delete failed: " + e.message);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    const ids = modal.targetId ? [modal.targetId] : Array.from(selectedIds);
+    if (ids.length === 0) return;
+    try {
+      await fileSystem.duplicate(ids);
+      refreshFiles();
+      setSelectedIds(new Set());
+      setModal({ type: null });
+    } catch (e: any) {
+      alert("Duplicate failed: " + e.message);
     }
   };
 
@@ -331,7 +361,10 @@ const App: React.FC = () => {
   };
 
   const handleContextMenu = (e: React.MouseEvent, file: FileNode) => {
-    if (!selectedIds.has(file.id)) setSelectedIds(new Set([file.id]));
+    if (!selectedIds.has(file.id)) {
+       setSelectedIds(new Set([file.id]));
+       setLastFocusedId(file.id);
+    }
     setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
   };
 
@@ -342,6 +375,7 @@ const App: React.FC = () => {
       case 'open': const f = files.find(f => f.id === targetId); if(f) handleOpen(f); break;
       case 'copy': handleCopy(false); break;
       case 'cut': handleCopy(true); break;
+      case 'duplicate': handleDuplicate(); break;
       case 'delete': handleDelete(); break;
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
@@ -381,12 +415,7 @@ const App: React.FC = () => {
         <div className="flex flex-col h-[calc(100%-4rem)]">
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 custom-scrollbar">
              <div className="text-xs font-semibold text-slate-500 uppercase px-4 mb-2 mt-4">Device</div>
-             
-             {/* Dynamic Folder Tree */}
-             <FolderTree 
-                onNavigate={(id) => { navigateTo(id); setSidebarOpen(false); }} 
-                activePathIds={activePathIds} 
-             />
+             <FolderTree onNavigate={(id) => { navigateTo(id); setSidebarOpen(false); }} activePathIds={activePathIds} />
 
              <div className="text-xs font-semibold text-slate-500 uppercase px-4 mt-6 mb-2">Collections</div>
              <button onClick={() => setFilterType('image')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'image' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
@@ -410,8 +439,6 @@ const App: React.FC = () => {
                 <Trash2 className="mr-3" size={18} /> Recycle Bin
              </button>
           </div>
-
-          {/* Storage Widget */}
           <div className="p-4 border-t border-slate-800 bg-slate-900/50">
              <div className="flex justify-between text-xs mb-2 text-slate-400">
                <span>Storage Used</span>
@@ -437,75 +464,34 @@ const App: React.FC = () => {
               <Menu size={20} />
             </button>
           </div>
-
-          {/* Navigation Controls */}
           <div className="hidden md:flex items-center gap-1">
-             <button 
-               onClick={handleBack} 
-               disabled={historyIndex <= 0 && !isTrashView && !showStorage}
-               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-             >
-               <ChevronLeft size={20} />
-             </button>
-             <button 
-               onClick={handleForward} 
-               disabled={historyIndex >= historyStack.length - 1 || isTrashView || showStorage}
-               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-             >
-               <ChevronRight size={20} />
-             </button>
+             <button onClick={handleBack} disabled={historyIndex <= 0 && !isTrashView && !showStorage} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"><ChevronLeft size={20} /></button>
+             <button onClick={handleForward} disabled={historyIndex >= historyStack.length - 1 || isTrashView || showStorage} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={20} /></button>
           </div>
-
           <div className="flex-1 overflow-hidden">
-            <Breadcrumbs 
-              path={isTrashView ? [{id:'trash', name:'Recycle Bin', parentId:'root', type:'folder', size:0, updatedAt:0}] : currentPath} 
-              onNavigate={handleNavigate}
-              onNavigateRoot={() => navigateTo('root')}
-            />
+            <Breadcrumbs path={isTrashView ? [{id:'trash', name:'Recycle Bin', parentId:'root', type:'folder', size:0, updatedAt:0}] : currentPath} onNavigate={handleNavigate} onNavigateRoot={() => navigateTo('root')} />
           </div>
-
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button 
-               onClick={() => setShowFilterPanel(!showFilterPanel)} 
-               className={`p-2 rounded-lg transition-colors ${showFilterPanel ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}
-            >
-               <Filter size={20} />
-            </button>
+            <button onClick={() => setShowFilterPanel(!showFilterPanel)} className={`p-2 rounded-lg transition-colors ${showFilterPanel ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}><Filter size={20} /></button>
             <div className="relative hidden sm:block">
-               <input 
-                 type="text" 
-                 placeholder="Search" 
-                 value={searchQuery}
-                 onChange={(e) => setSearchQuery(e.target.value)}
-                 className="bg-slate-900 border border-slate-800 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-500 w-40 lg:w-64 transition-all"
-               />
+               <input type="text" placeholder="Search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-slate-900 border border-slate-800 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-500 w-40 lg:w-64 transition-all" />
                <Search className="absolute left-3 top-2 text-slate-500" size={14} />
             </div>
             <div className="h-6 w-px bg-slate-800 mx-1"></div>
-            <button onClick={() => setViewMode(prev => prev === ViewMode.GRID ? ViewMode.LIST : ViewMode.GRID)} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg">
-               {viewMode === ViewMode.GRID ? <List size={20} /> : <Grid size={20} />}
-            </button>
+            <button onClick={() => setViewMode(prev => prev === ViewMode.GRID ? ViewMode.LIST : ViewMode.GRID)} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg">{viewMode === ViewMode.GRID ? <List size={20} /> : <Grid size={20} />}</button>
           </div>
         </header>
 
         {/* Sort/Filter Panel */}
         {showFilterPanel && (
-          <SortFilterControl 
-            sortField={sortField} setSortField={setSortField}
-            sortDirection={sortDirection} setSortDirection={setSortDirection}
-            filterType={filterType} setFilterType={setFilterType}
-            filterDate={filterDate} setFilterDate={setFilterDate}
-            onClose={() => setShowFilterPanel(false)}
-          />
+          <SortFilterControl sortField={sortField} setSortField={setSortField} sortDirection={sortDirection} setSortDirection={setSortDirection} filterType={filterType} setFilterType={setFilterType} filterDate={filterDate} setFilterDate={setFilterDate} onClose={() => setShowFilterPanel(false)} />
         )}
 
         {/* Views */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 md:p-4 scroll-smooth">
            {showStorage ? (
              <div className="max-w-3xl mx-auto mt-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-               <button onClick={() => setShowStorage(false)} className="mb-4 text-blue-400 text-sm flex items-center hover:underline">
-                 <ArrowLeft size={16} className="mr-1" /> Back to Files
-               </button>
+               <button onClick={() => setShowStorage(false)} className="mb-4 text-blue-400 text-sm flex items-center hover:underline"><ArrowLeft size={16} className="mr-1" /> Back to Files</button>
                <StorageChart used={storageStats.used} total={storageStats.total} />
              </div>
            ) : isTrashView ? (
@@ -514,45 +500,21 @@ const App: React.FC = () => {
                   <h2 className="text-xl font-bold text-red-400 flex items-center"><Trash2 className="mr-2" /> Recycle Bin</h2>
                   <button onClick={handleEmptyTrash} className="px-4 py-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 text-sm font-medium">Empty Bin</button>
                 </div>
-                <FileList 
-                  files={displayedFiles} viewMode={viewMode} selectedIds={selectedIds} onSelect={handleSelect}
-                  onOpen={() => {}} sortField={sortField} onContextMenu={handleContextMenu} onDropFile={() => {}}
-                />
+                <FileList files={displayedFiles} viewMode={viewMode} selectedIds={selectedIds} onSelect={handleSelect} onOpen={() => {}} sortField={sortField} onContextMenu={handleContextMenu} onDropFile={() => {}} />
               </div>
            ) : (
-             <FileList 
-               files={displayedFiles}
-               viewMode={viewMode}
-               selectedIds={selectedIds}
-               onSelect={handleSelect}
-               onOpen={handleOpen}
-               sortField={sortField}
-               onContextMenu={handleContextMenu}
-               onDropFile={handleDropMove}
-             />
+             <FileList files={displayedFiles} viewMode={viewMode} selectedIds={selectedIds} onSelect={handleSelect} onOpen={handleOpen} sortField={sortField} onContextMenu={handleContextMenu} onDropFile={handleDropMove} />
            )}
         </div>
 
-        {/* FAB (Paste or Add) */}
+        {/* FAB */}
         {!isTrashView && !showStorage && (
           <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3 z-30">
              {clipboard && (
-               <button 
-                 onClick={handlePaste}
-                 className="flex items-center gap-2 px-5 py-3 bg-slate-800 border border-slate-700 text-slate-200 rounded-full shadow-xl hover:bg-slate-700 transition-all animate-in slide-in-from-right-10"
-               >
-                 <Clipboard size={18} />
-                 <span>Paste {clipboard.sourceIds.length} items</span>
-               </button>
+               <button onClick={handlePaste} className="flex items-center gap-2 px-5 py-3 bg-slate-800 border border-slate-700 text-slate-200 rounded-full shadow-xl hover:bg-slate-700 transition-all animate-in slide-in-from-right-10"><Clipboard size={18} /><span>Paste {clipboard.sourceIds.length} items</span></button>
              )}
-             
              {selectedIds.size === 0 && (
-               <button 
-                 onClick={() => setModal({ type: 'CREATE_FOLDER' })}
-                 className="w-14 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl shadow-lg shadow-blue-600/30 flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
-               >
-                 <Plus size={28} />
-               </button>
+               <button onClick={() => setModal({ type: 'CREATE_FOLDER' })} className="w-14 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl shadow-lg shadow-blue-600/30 flex items-center justify-center transition-transform hover:scale-105 active:scale-95"><Plus size={28} /></button>
              )}
           </div>
         )}
@@ -564,25 +526,16 @@ const App: React.FC = () => {
              <div className="h-6 w-px bg-slate-700 mx-2"></div>
              {!isTrashView && (
                <>
-                 <button onClick={() => handleCopy(false)} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Copy">
-                   <Copy size={20} />
-                 </button>
-                 <button onClick={() => handleCopy(true)} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Cut">
-                   <Scissors size={20} />
-                 </button>
+                 <button onClick={() => handleCopy(false)} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Copy"><Copy size={20} /></button>
+                 <button onClick={() => handleCopy(true)} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Cut"><Scissors size={20} /></button>
+                 <button onClick={handleDuplicate} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Duplicate"><RefreshCw size={20} /></button>
                  {selectedIds.size === 1 && (
-                    <button onClick={() => setModal({ type: 'RENAME', targetId: Array.from(selectedIds)[0] })} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Rename">
-                      <RefreshCw size={20} />
-                    </button>
+                    <button onClick={() => setModal({ type: 'RENAME', targetId: Array.from(selectedIds)[0] })} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Rename"><RefreshCw size={20} /></button>
                  )}
                </>
              )}
-             <button onClick={handleDelete} className="p-3 text-red-400 hover:bg-red-500/20 rounded-xl transition-colors" title="Delete">
-               <Trash2 size={20} />
-             </button>
-             <button onClick={() => setSelectedIds(new Set())} className="p-3 text-slate-400 hover:bg-slate-800 rounded-xl">
-               <span className="text-xs font-bold uppercase">Cancel</span>
-             </button>
+             <button onClick={handleDelete} className="p-3 text-red-400 hover:bg-red-500/20 rounded-xl transition-colors" title="Delete"><Trash2 size={20} /></button>
+             <button onClick={() => setSelectedIds(new Set())} className="p-3 text-slate-400 hover:bg-slate-800 rounded-xl"><span className="text-xs font-bold uppercase">Cancel</span></button>
           </div>
         )}
 
@@ -590,52 +543,14 @@ const App: React.FC = () => {
 
       {/* Dialogs and Context Menu */}
       {previewState && (
-        <FilePreview 
-          file={previewState.file} 
-          url={previewState.url} 
-          content={previewState.content}
-          onClose={() => setPreviewState(null)}
-          onOpenExternal={() => {
-            fileSystem.openFile(previewState.file);
-            setPreviewState(null);
-          }}
-        />
+        <FilePreview file={previewState.file} url={previewState.url} content={previewState.content} onClose={() => setPreviewState(null)} onOpenExternal={() => { fileSystem.openFile(previewState.file); setPreviewState(null); }} />
       )}
-
       {contextMenu && (
-        <ContextMenu 
-          x={contextMenu.x} y={contextMenu.y} 
-          onClose={() => setContextMenu(null)}
-          onAction={executeMenuAction}
-          singleFile={selectedIds.size <= 1}
-          isFolder={files.find(f => f.id === contextMenu.fileId)?.type === 'folder'}
-        />
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} onAction={executeMenuAction} singleFile={selectedIds.size <= 1} isFolder={files.find(f => f.id === contextMenu.fileId)?.type === 'folder'} />
       )}
-
-      <InputDialog 
-        isOpen={modal.type === 'CREATE_FOLDER'} 
-        title="New Folder" 
-        placeholder="Folder Name"
-        actionLabel="Create"
-        onClose={() => setModal({ type: null })}
-        onSubmit={handleCreateFolder}
-      />
-
-      <InputDialog 
-        isOpen={modal.type === 'RENAME'} 
-        title="Rename Item" 
-        defaultValue={files.find(f => f.id === modal.targetId)?.name}
-        actionLabel="Rename"
-        onClose={() => setModal({ type: null })}
-        onSubmit={handleRename}
-      />
-
-      <PropertiesDialog 
-        isOpen={modal.type === 'PROPERTIES'}
-        onClose={() => setModal({ type: null })}
-        file={files.find(f => f.id === modal.targetId)}
-      />
-
+      <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Folder Name" actionLabel="Create" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} />
+      <InputDialog isOpen={modal.type === 'RENAME'} title="Rename Item" defaultValue={files.find(f => f.id === modal.targetId)?.name} actionLabel="Rename" onClose={() => setModal({ type: null })} onSubmit={handleRename} />
+      <PropertiesDialog isOpen={modal.type === 'PROPERTIES'} onClose={() => setModal({ type: null })} file={files.find(f => f.id === modal.targetId)} />
     </div>
   );
 };
