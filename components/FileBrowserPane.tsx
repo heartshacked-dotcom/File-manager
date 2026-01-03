@@ -18,6 +18,7 @@ interface FileBrowserPaneProps {
   onOpen: (file: FileNode) => void;
   onContextMenu: (e: React.MouseEvent, file: FileNode) => void;
   onDropFile: (sourceId: string, targetFolderId: string) => void;
+  onSearch?: () => void;
   className?: string;
 }
 
@@ -29,6 +30,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
   onOpen,
   onContextMenu,
   onDropFile,
+  onSearch,
   className
 }) => {
   const [showFilter, setShowFilter] = useState(false);
@@ -133,6 +135,9 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
          </div>
 
          <div className="flex items-center gap-1">
+             <button onClick={onSearch} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800">
+                <Search size={18} />
+             </button>
              <button onClick={() => setShowFilter(!showFilter)} className={`p-1.5 rounded-lg transition-colors ${showFilter ? 'text-blue-500 bg-blue-100 dark:bg-blue-900/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
                 <Filter size={18} />
              </button>
@@ -149,7 +154,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
               sortField={sortField} setSortField={setSortField}
               sortDirection={sortDirection} setSortDirection={setSortDirection}
               filterType={filterType} setFilterType={setFilterType}
-              filterDate={'ALL'} setFilterDate={() => {}} // Simplified for pane
+              filterDate={'ALL'} setFilterDate={() => {}} 
               filterSize={'ALL'} setFilterSize={() => {}}
               showHidden={showHidden} setShowHidden={setShowHidden}
               onClose={() => setShowFilter(false)}
@@ -157,22 +162,6 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
         </div>
       )}
       
-      {/* Search Bar (Optional, integrated into Filter or separate) */}
-      {showFilter && (
-        <div className="px-3 pb-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
-           <div className="relative">
-              <input 
-                type="text" 
-                placeholder="Search this folder..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 dark:text-slate-200"
-              />
-              <Search className="absolute left-3 top-2 text-slate-400" size={14} />
-           </div>
-        </div>
-      )}
-
       {/* File List with Pull to Refresh */}
       <div 
         ref={containerRef}

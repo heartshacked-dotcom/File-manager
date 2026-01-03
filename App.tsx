@@ -14,6 +14,7 @@ import StorageChart from './components/StorageChart';
 import FileActionMenu from './components/FileActionMenu'; 
 import FilePreview from './components/FilePreview';
 import FolderTree from './components/FolderTree';
+import SearchScreen from './components/SearchScreen';
 import AuthDialog from './components/AuthDialog';
 import SettingsDialog from './components/SettingsDialog';
 import PermissionScreen from './components/PermissionScreen';
@@ -53,6 +54,7 @@ const AppContent: React.FC = () => {
 
   // --- UI State ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string, paneId: PaneId } | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
@@ -148,6 +150,17 @@ const AppContent: React.FC = () => {
       } catch (e: any) {
         alert("Cannot open file: " + e.message);
       }
+    }
+  };
+
+  const handleReveal = async (file: FileNode) => {
+    setShowSearch(false);
+    if (file.parentId) {
+      // Navigate active pane to parent folder
+      await activePane.navigateTo(file.parentId);
+      // Select the file to highlight it
+      activePane.setSelectedIds(new Set([file.id]));
+      // Note: Auto-scroll to item would require ref management in FileList, omitting for brevity
     }
   };
 
@@ -424,6 +437,7 @@ const AppContent: React.FC = () => {
                   onOpen={(f) => handleOpen(f, leftPane)}
                   onContextMenu={(e, f) => handleContextMenu(e, f, 'left')}
                   onDropFile={handleDropMove}
+                  onSearch={() => setShowSearch(true)}
                />
             </div>
             {(dualPaneEnabled || activePaneId === 'right') && (
@@ -436,6 +450,7 @@ const AppContent: React.FC = () => {
                     onOpen={(f) => handleOpen(f, rightPane)}
                     onContextMenu={(e, f) => handleContextMenu(e, f, 'right')}
                     onDropFile={handleDropMove}
+                    onSearch={() => setShowSearch(true)}
                  />
               </div>
             )}
@@ -488,6 +503,13 @@ const AppContent: React.FC = () => {
       </div>
 
       {/* Overlays */}
+      <SearchScreen 
+        isOpen={showSearch} 
+        onClose={() => setShowSearch(false)} 
+        onNavigate={(f) => { setShowSearch(false); handleOpen(f, activePane); }}
+        onReveal={handleReveal}
+      />
+
       {showStorage && (
          <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 animate-in slide-in-from-bottom-full duration-300">
             <div className="p-4">
