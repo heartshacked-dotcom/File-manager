@@ -19,14 +19,17 @@ import AuthDialog from './components/AuthDialog';
 import SettingsDialog from './components/SettingsDialog';
 import PermissionScreen from './components/PermissionScreen';
 import CompressionModal from './components/CompressionModal';
+import EncryptionDialog from './components/EncryptionDialog';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Settings, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Clipboard, 
   Plus, RefreshCw, Archive, Layout, Moon, Sun, Columns, 
   Smartphone, HardDrive, ArrowLeft, Clock, Star, RotateCcw,
-  MoreVertical 
+  MoreVertical, Lock
 } from 'lucide-react';
+
+const VAULT_FOLDER = 'Secure Vault';
 
 interface PreviewState {
   file: FileNode;
@@ -45,7 +48,7 @@ const AppContent: React.FC = () => {
   
   // --- Global State ---
   const [permStatus, setPermStatus] = useState<PermissionStatus>(PermissionStatus.UNKNOWN);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPinHash, setVaultPinHash] = useState<string | null>(localStorage.getItem('nova_vault_pin'));
   
   // --- Panes ---
@@ -67,6 +70,8 @@ const AppContent: React.FC = () => {
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [compressionState, setCompressionState] = useState<CompressionState>({ isOpen: false, mode: 'COMPRESS', files: [] });
+  const [encryptionModal, setEncryptionModal] = useState<{ isOpen: boolean, mode: 'ENCRYPT' | 'DECRYPT', files: FileNode[] }>({ isOpen: false, mode: 'ENCRYPT', files: [] });
+  
   const [showStorage, setShowStorage] = useState(false);
   const [storageStats, setStorageStats] = useState({ used: 0, total: 0 });
 
@@ -80,24 +85,37 @@ const AppContent: React.FC = () => {
     checkPermissions();
     if (window.innerWidth > 1024) setDualPaneEnabled(true);
     
-    // Listen for app resume (e.g. coming back from Settings)
+    // Auto-Lock Vault on Background
     const listener = CapacitorApp.addListener('appStateChange', async ({ isActive }) => {
       if (isActive) {
-         // Check if permission was granted while in background
          if (permStatus !== PermissionStatus.GRANTED) {
              const verified = await fileSystem.confirmFullAccess();
              if (verified) setPermStatus(PermissionStatus.GRANTED);
          }
+      } else {
+         // App going to background -> Lock Vault
+         setVaultUnlocked(false);
+         // Optionally navigate away from vault if open, but simple locking state is enough for next render check
       }
     });
 
     return () => { listener.then(l => l.remove()); }
   }, [checkPermissions, permStatus]);
 
+  // Navigate Logic with Vault Protection
+  const handleNavigate = (pane: ReturnType<typeof useFilePane>, id: string) => {
+    if (id === VAULT_FOLDER && !vaultUnlocked) {
+       // Trigger Auth
+       setActivePaneId(pane === leftPane ? 'left' : 'right');
+       setModal({ type: 'AUTH', targetId: id });
+       return;
+    }
+    pane.navigateTo(id);
+  };
+
   const handleGrantFull = async () => {
      const launched = await fileSystem.requestFullAccess();
      return launched;
-     // The actual state update happens on 'appStateChange' or next check
   };
 
   const handleGrantScoped = async () => {
@@ -111,24 +129,24 @@ const AppContent: React.FC = () => {
   const handleOpen = async (file: FileNode, pane: ReturnType<typeof useFilePane>) => {
     // Handle Shortcuts
     if (file.id === 'downloads_shortcut') {
-       pane.navigateTo('Download'); // Standard Android Downloads folder is 'Download'
+       handleNavigate(pane, 'Download');
        return;
     }
 
     if (file.type === 'folder') {
-      if (file.isProtected && !isAuthenticated) {
-        setModal({ type: 'AUTH', targetId: file.id });
-        return;
-      }
-      pane.navigateTo(file.id);
+      handleNavigate(pane, file.id);
     } else {
       try {
         if (file.isEncrypted) {
-           setModal({ type: 'DECRYPT', targetId: file.id });
+           // Open Encryption Dialog for Decrypt
+           setEncryptionModal({
+             isOpen: true,
+             mode: 'DECRYPT',
+             files: [file]
+           });
            return;
         }
         if (file.type === 'archive' || file.name.endsWith('.zip')) {
-           // Open Advanced Extract Modal
            setCompressionState({
              isOpen: true,
              mode: 'EXTRACT',
@@ -166,11 +184,8 @@ const AppContent: React.FC = () => {
   const handleReveal = async (file: FileNode) => {
     setShowSearch(false);
     if (file.parentId) {
-      // Navigate active pane to parent folder
-      await activePane.navigateTo(file.parentId);
-      // Select the file to highlight it
+      handleNavigate(activePane, file.parentId);
       activePane.setSelectedIds(new Set([file.id]));
-      // Note: Auto-scroll to item would require ref management in FileList, omitting for brevity
     }
   };
 
@@ -224,28 +239,48 @@ const AppContent: React.FC = () => {
   const triggerCompress = () => {
     const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
     if (ids.length === 0) return;
-    
     const filesToCompress = activePane.files.filter(f => ids.includes(f.id));
-    
-    setCompressionState({
-      isOpen: true,
-      mode: 'COMPRESS',
-      files: filesToCompress
-    });
-    setModal({ type: null }); // Close input dialog if open (redundant safety)
+    setCompressionState({ isOpen: true, mode: 'COMPRESS', files: filesToCompress });
+    setModal({ type: null }); 
+  };
+
+  const triggerEncrypt = () => {
+    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    if (ids.length === 0) return;
+    const files = activePane.files.filter(f => ids.includes(f.id));
+    // Determine mode based on first file selection (simplified)
+    const mode = files[0].isEncrypted ? 'DECRYPT' : 'ENCRYPT';
+    setEncryptionModal({ isOpen: true, mode, files });
+    setModal({ type: null });
+  };
+
+  const handleEncryptionSubmit = async (password: string) => {
+     const { mode, files } = encryptionModal;
+     const ids = files.map(f => f.id);
+     try {
+        if (mode === 'ENCRYPT') {
+           await fileSystem.encryptFiles(ids, password);
+        } else {
+           await fileSystem.decryptFiles(ids, password);
+        }
+        activePane.refreshFiles();
+        activePane.setSelectedIds(new Set());
+        setEncryptionModal(prev => ({ ...prev, isOpen: false }));
+     } catch (e: any) {
+        alert("Operation failed: " + e.message);
+     }
   };
 
   const handleShare = async () => {
      const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
      if (ids.length === 0) return;
-     // For mock / web, navigator.share with text
      if (navigator.share) {
         try {
            const file = activePane.files.find(f => f.id === ids[0]);
            await navigator.share({
              title: file?.name || 'Shared Files',
              text: `Sharing ${ids.length} files from Nova Explorer`,
-             url: window.location.href // In real app, share file URI or Content URI
+             url: window.location.href 
            });
         } catch(e) {}
      } else {
@@ -272,7 +307,6 @@ const AppContent: React.FC = () => {
   const handleContextMenu = (e: React.MouseEvent, file: FileNode, paneId: PaneId) => {
     setActivePaneId(paneId);
     const pane = paneId === 'left' ? leftPane : rightPane;
-    // If not in selection, select it exclusively
     if (!pane.selectedIds.has(file.id)) {
       pane.setSelectedIds(new Set([file.id]));
     }
@@ -285,17 +319,14 @@ const AppContent: React.FC = () => {
   };
 
   const executeMenuAction = async (action: string) => {
-    // If we have a specific file context (via 3-dots), use that. Otherwise use selection.
     const specificFileId = contextMenu?.fileId;
     const targetIds = specificFileId ? [specificFileId] : Array.from(activePane.selectedIds);
     const pane = contextMenu?.paneId === 'left' ? leftPane : rightPane;
     
-    // Ensure the specific file is 'selected' for operations if not already
     if (specificFileId && !pane.selectedIds.has(specificFileId)) {
        pane.setSelectedIds(new Set([specificFileId]));
     }
 
-    // Common Target (single)
     const targetId = specificFileId || targetIds[0];
 
     switch(action) {
@@ -306,7 +337,7 @@ const AppContent: React.FC = () => {
       case 'restore': handleRestore(); break;
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
-      case 'encrypt': setModal({ type: 'ENCRYPT', targetId }); break;
+      case 'encrypt': triggerEncrypt(); break;
       case 'compress': triggerCompress(); break;
       case 'share': handleShare(); break;
       case 'bookmark': 
@@ -317,34 +348,33 @@ const AppContent: React.FC = () => {
     setContextMenu(null);
   };
 
+  // Vault / PIN Logic
   const handleAuthSuccess = (pin: string) => {
+    if (pin === 'BIOMETRIC_BYPASS') {
+       // Biometric success flow
+       setVaultUnlocked(true);
+       setModal({ type: null });
+       if (modal.targetId) activePane.navigateTo(modal.targetId);
+       return;
+    }
+
     if (!vaultPinHash) {
        SecurityService.hashPin(pin).then(h => {
          localStorage.setItem('nova_vault_pin', h);
          setVaultPinHash(h);
-         setIsAuthenticated(true);
+         setVaultUnlocked(true);
          setModal({ type: null });
          if(modal.targetId) activePane.navigateTo(modal.targetId);
        });
     } else {
        SecurityService.verifyPin(pin, vaultPinHash).then(ok => {
          if(ok) {
-           setIsAuthenticated(true);
+           setVaultUnlocked(true);
            setModal({ type: null });
            if(modal.targetId) activePane.navigateTo(modal.targetId);
          } else alert("Wrong PIN");
        });
     }
-  };
-
-  const handleEncryption = async (password: string) => {
-     const id = modal.targetId || Array.from(activePane.selectedIds)[0];
-     try {
-       if (modal.type === 'ENCRYPT') await fileSystem.encryptFiles([id], password);
-       else await fileSystem.decryptFiles([id], password);
-       activePane.refreshFiles();
-       setModal({ type: null });
-     } catch (e: any) { alert(e.message); }
   };
 
   // --- Rendering ---
@@ -359,8 +389,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Determine current active file for context menu (if single context)
   const contextFile = contextMenu?.fileId ? activePane.files.find(f => f.id === contextMenu.fileId) : undefined;
+  // If active path is inside vault and locked (shouldn't happen with guards, but for UI safety)
+  const isVaultProtected = activePane.currentPath.some(p => p.id === VAULT_FOLDER) && !vaultUnlocked;
 
   return (
     <div className="flex h-screen w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans transition-colors duration-300">
@@ -374,10 +405,10 @@ const AppContent: React.FC = () => {
         
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
            <div className="px-4 pt-4 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Drives</div>
-           <button onClick={() => { setActivePaneId('left'); leftPane.navigateTo('root_internal'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+           <button onClick={() => { setActivePaneId('left'); handleNavigate(leftPane, 'root_internal'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <Smartphone size={18} className="mr-3" /> Internal Storage
            </button>
-           <button onClick={() => { setActivePaneId('left'); leftPane.navigateTo('root_sd'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+           <button onClick={() => { setActivePaneId('left'); handleNavigate(leftPane, 'root_sd'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <HardDrive size={18} className="mr-3" /> SD Card
            </button>
            
@@ -390,9 +421,12 @@ const AppContent: React.FC = () => {
            </button>
            
            <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Locations</div>
-           <FolderTree onNavigate={(id) => { activePane.navigateTo(id); setSidebarOpen(false); }} activePathIds={new Set(activePane.currentPath.map(n => n.id))} />
+           <FolderTree onNavigate={(id) => { handleNavigate(activePane, id); setSidebarOpen(false); }} activePathIds={new Set(activePane.currentPath.map(n => n.id))} />
            
            <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Tools</div>
+           <button onClick={() => { handleNavigate(activePane, VAULT_FOLDER); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 dark:hover:text-amber-400 transition-colors">
+              <Shield size={18} className="mr-3" /> Secure Vault
+           </button>
            <button onClick={() => setShowStorage(true)} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <ChartIcon size={18} className="mr-3" /> Storage Analysis
            </button>
@@ -439,34 +473,44 @@ const AppContent: React.FC = () => {
          </div>
 
          {/* Pane Container */}
-         <div className="flex-1 flex overflow-hidden p-2 gap-2 relative">
-            <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'left' ? 'w-full' : 'hidden md:block md:w-full')}`}>
-               <FileBrowserPane 
-                  id="left"
-                  isActive={activePaneId === 'left'}
-                  onFocus={() => setActivePaneId('left')}
-                  paneState={leftPane}
-                  onOpen={(f) => handleOpen(f, leftPane)}
-                  onContextMenu={(e, f) => handleContextMenu(e, f, 'left')}
-                  onDropFile={handleDropMove}
-                  onSearch={() => setShowSearch(true)}
-               />
+         {isVaultProtected ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+               <Lock size={64} className="mb-4 text-slate-300 dark:text-slate-700" />
+               <p className="font-bold text-lg mb-2">Vault Locked</p>
+               <button onClick={() => setModal({ type: 'AUTH', targetId: VAULT_FOLDER })} className="px-6 py-2 bg-blue-600 text-white rounded-lg">
+                  Unlock Vault
+               </button>
             </div>
-            {(dualPaneEnabled || activePaneId === 'right') && (
-              <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'right' ? 'w-full' : 'hidden')}`}>
+         ) : (
+           <div className="flex-1 flex overflow-hidden p-2 gap-2 relative">
+              <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'left' ? 'w-full' : 'hidden md:block md:w-full')}`}>
                  <FileBrowserPane 
-                    id="right"
-                    isActive={activePaneId === 'right'}
-                    onFocus={() => setActivePaneId('right')}
-                    paneState={rightPane}
-                    onOpen={(f) => handleOpen(f, rightPane)}
-                    onContextMenu={(e, f) => handleContextMenu(e, f, 'right')}
+                    id="left"
+                    isActive={activePaneId === 'left'}
+                    onFocus={() => setActivePaneId('left')}
+                    paneState={leftPane}
+                    onOpen={(f) => handleOpen(f, leftPane)}
+                    onContextMenu={(e, f) => handleContextMenu(e, f, 'left')}
                     onDropFile={handleDropMove}
                     onSearch={() => setShowSearch(true)}
                  />
               </div>
-            )}
-         </div>
+              {(dualPaneEnabled || activePaneId === 'right') && (
+                <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'right' ? 'w-full' : 'hidden')}`}>
+                   <FileBrowserPane 
+                      id="right"
+                      isActive={activePaneId === 'right'}
+                      onFocus={() => setActivePaneId('right')}
+                      paneState={rightPane}
+                      onOpen={(f) => handleOpen(f, rightPane)}
+                      onContextMenu={(e, f) => handleContextMenu(e, f, 'right')}
+                      onDropFile={handleDropMove}
+                      onSearch={() => setShowSearch(true)}
+                   />
+                </div>
+              )}
+           </div>
+         )}
 
          {!dualPaneEnabled && (
            <div className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex">
@@ -518,7 +562,7 @@ const AppContent: React.FC = () => {
       <SearchScreen 
         isOpen={showSearch} 
         onClose={() => setShowSearch(false)} 
-        onNavigate={(f) => { setShowSearch(false); handleOpen(f, activePane); }}
+        onNavigate={(f) => { setShowSearch(false); handleNavigate(activePane, f.id); }}
         onReveal={handleReveal}
       />
 
@@ -531,6 +575,14 @@ const AppContent: React.FC = () => {
            activePane.refreshFiles();
            activePane.setSelectedIds(new Set());
         }}
+      />
+      
+      <EncryptionDialog 
+        isOpen={encryptionModal.isOpen}
+        mode={encryptionModal.mode}
+        fileName={encryptionModal.files[0]?.name}
+        onClose={() => setEncryptionModal(prev => ({...prev, isOpen: false}))}
+        onSubmit={handleEncryptionSubmit}
       />
 
       {showStorage && (
@@ -546,7 +598,6 @@ const AppContent: React.FC = () => {
       <SettingsDialog isOpen={modal.type === 'SETTINGS'} onClose={() => setModal({ type: null })} showHidden={activePane.showHidden} onToggleHidden={(v) => { leftPane.setShowHidden(v); rightPane.setShowHidden(v); }} showProtected={activePane.showHidden} onToggleProtected={() => {}} onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }} />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Name" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} actionLabel="Create" />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={activePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); activePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
-      <InputDialog isOpen={modal.type === 'ENCRYPT' || modal.type === 'DECRYPT'} title={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} placeholder="Password" onClose={() => setModal({ type: null })} onSubmit={handleEncryption} actionLabel={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} />
       
       {previewState && <FilePreview file={previewState.file} url={previewState.url} content={previewState.content} onClose={() => setPreviewState(null)} onOpenExternal={() => fileSystem.openFile(previewState.file)} />}
       

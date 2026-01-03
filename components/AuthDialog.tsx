@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { X, Lock, ShieldCheck, KeyRound } from 'lucide-react';
+import { X, Lock, ShieldCheck, KeyRound, Fingerprint } from 'lucide-react';
 import { SecurityService } from '../services/security';
 
 interface AuthDialogProps {
@@ -14,6 +15,7 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ isOpen, mode, onSuccess, onClos
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(true);
 
   useEffect(() => {
     if (isOpen) {
@@ -52,6 +54,12 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ isOpen, mode, onSuccess, onClos
     }
   };
 
+  const handleBiometric = () => {
+    // Mock biometric success
+    // In a real app, calls Native Biometric API
+    onSuccess('BIOMETRIC_BYPASS'); 
+  };
+
   const displayDots = (val: string) => {
     return (
       <div className="flex gap-4 justify-center my-6">
@@ -65,7 +73,7 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ isOpen, mode, onSuccess, onClos
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl shadow-2xl overflow-hidden p-6 flex flex-col items-center">
-         <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500 mb-4">
+         <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500 mb-4 ring-1 ring-blue-500/30">
             {mode === 'CREATE' ? <ShieldCheck size={32} /> : <Lock size={32} />}
          </div>
          
@@ -83,21 +91,27 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ isOpen, mode, onSuccess, onClos
              <button 
                key={num} 
                onClick={() => handleDigit(num.toString())}
-               className="h-16 rounded-2xl bg-slate-800 hover:bg-slate-700 text-2xl font-medium text-white transition-colors"
+               className="h-16 rounded-2xl bg-slate-800 hover:bg-slate-700 text-2xl font-medium text-white transition-colors active:scale-95"
              >
                {num}
              </button>
            ))}
-           <div />
+           <div className="flex items-center justify-center">
+             {mode === 'ENTER' && isBiometricAvailable && (
+               <button onClick={handleBiometric} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-full transition-colors" title="Use Biometrics">
+                 <Fingerprint size={32} />
+               </button>
+             )}
+           </div>
            <button 
              onClick={() => handleDigit('0')}
-             className="h-16 rounded-2xl bg-slate-800 hover:bg-slate-700 text-2xl font-medium text-white transition-colors"
+             className="h-16 rounded-2xl bg-slate-800 hover:bg-slate-700 text-2xl font-medium text-white transition-colors active:scale-95"
            >
              0
            </button>
            <button 
              onClick={handleBackspace}
-             className="h-16 rounded-2xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex items-center justify-center"
+             className="h-16 rounded-2xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors flex items-center justify-center active:scale-95"
            >
              <X size={24} />
            </button>
@@ -105,7 +119,7 @@ const AuthDialog: React.FC<AuthDialogProps> = ({ isOpen, mode, onSuccess, onClos
 
          <div className="flex w-full gap-3">
             <button onClick={onClose} className="flex-1 py-3 text-slate-400 font-medium hover:text-white">Cancel</button>
-            <button onClick={handleSubmit} className="flex-1 py-3 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 transition-colors">
+            <button onClick={handleSubmit} className="flex-1 py-3 bg-blue-600 rounded-xl font-bold text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-600/20">
                {mode === 'CREATE' ? 'Set PIN' : 'Unlock'}
             </button>
          </div>
