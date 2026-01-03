@@ -9,6 +9,7 @@ import { SecurityService } from './security';
 
 const TRASH_FOLDER = '.nova_trash';
 const TRASH_INDEX = 'trash_index.json';
+const VAULT_FOLDER = 'Secure Vault';
 
 // Enum for internal permission tracking
 export enum PermissionStatus {
@@ -222,6 +223,14 @@ class AndroidFileSystem {
   }
 
   async trash(ids: string[]): Promise<void> {
+    try {
+        await Filesystem.mkdir({
+            path: TRASH_FOLDER,
+            directory: Directory.ExternalStorage,
+            recursive: true
+        });
+    } catch (e) { /* ignore if exists */ }
+
     let index: TrashEntry[] = [];
     try {
        const res = await Filesystem.readFile({ path: `${TRASH_FOLDER}/${TRASH_INDEX}`, directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
@@ -265,7 +274,9 @@ class AndroidFileSystem {
            try {
                const parentPath = item.originalPath.substring(0, item.originalPath.lastIndexOf('/'));
                if (parentPath) {
-                 await Filesystem.mkdir({ path: parentPath, directory: Directory.ExternalStorage, recursive: true });
+                 try {
+                   await Filesystem.mkdir({ path: parentPath, directory: Directory.ExternalStorage, recursive: true });
+                 } catch (e) {}
                }
 
                await Filesystem.rename({
@@ -274,6 +285,7 @@ class AndroidFileSystem {
                    directory: Directory.ExternalStorage
                });
            } catch(e) { 
+              console.error("Restore failed", e);
               remainingIndex.push(item);
            }
         } else {
@@ -367,7 +379,7 @@ class AndroidFileSystem {
               isTrash: true
             },
             { 
-              id: 'secure_vault', 
+              id: VAULT_FOLDER, 
               parentId: 'root', 
               name: 'Secure Vault', 
               type: 'folder', 
@@ -388,6 +400,11 @@ class AndroidFileSystem {
        path = parentId;
     }
     
+    // Auto-create Secure Vault if accessed
+    if (parentId === VAULT_FOLDER) {
+       try { await Filesystem.mkdir({ path: VAULT_FOLDER, directory: Directory.ExternalStorage, recursive: true }); } catch {}
+    }
+
     try {
       const res = await Filesystem.readdir({
         path: path,
@@ -419,7 +436,6 @@ class AndroidFileSystem {
 
       return nodes;
     } catch (e: any) {
-      // Suppress 'Folder does not exist' errors to avoid console noise when navigating to empty drives or optional paths
       if (e.message && (e.message.includes('Folder does not exist') || e.message.includes('does not exist'))) {
          return [];
       }
@@ -436,7 +452,7 @@ class AndroidFileSystem {
       if (id === 'recent') return { id: 'recent', parentId: 'root', name: 'Recent Files', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'favorites') return { id: 'favorites', parentId: 'root', name: 'Favorites', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'downloads_shortcut') return { id: 'downloads_shortcut', parentId: 'root', name: 'Downloads', type: 'folder', size: 0, updatedAt: 0 };
-      if (id === 'secure_vault') return { id: 'secure_vault', parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: 0 };
+      if (id === VAULT_FOLDER) return { id: VAULT_FOLDER, parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: 0, isProtected: true };
 
       const res = await Filesystem.stat({ path: id, directory: Directory.ExternalStorage });
       const name = id.split('/').pop() || id;
@@ -464,7 +480,7 @@ class AndroidFileSystem {
     if (id === 'root_internal') return [{ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 }];
     if (id === 'root_sd') return [{ id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 }];
     if (id === 'downloads_shortcut') return [{ id: 'downloads_shortcut', parentId: 'root', name: 'Downloads', type: 'folder', size: 0, updatedAt: 0 }];
-    if (id === 'secure_vault') return [{ id: 'secure_vault', parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: 0 }];
+    if (id === VAULT_FOLDER) return [{ id: VAULT_FOLDER, parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: 0, isProtected: true }];
 
     const parts = id.split('/');
     const trail: FileNode[] = [];
@@ -499,7 +515,8 @@ class AndroidFileSystem {
     const path = (parentId === 'root' || parentId === 'root_internal') ? '' : parentId;
     await Filesystem.mkdir({
       path: path ? `${path}/${name}` : name,
-      directory: Directory.ExternalStorage
+      directory: Directory.ExternalStorage,
+      recursive: true // Safer to ensure structure
     });
   }
 
