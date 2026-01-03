@@ -420,11 +420,16 @@ class AndroidFileSystem {
        
        // 3. Write new .enc file
        const newPath = id + '.enc';
-       await Filesystem.writeFile({
-         path: newPath,
-         data: encryptedData,
-         directory: Directory.ExternalStorage,
-       });
+       try {
+         await Filesystem.writeFile({
+           path: newPath,
+           data: encryptedData,
+           directory: Directory.ExternalStorage,
+         });
+       } catch (writeError) {
+         console.error("Encryption write error:", writeError);
+         throw new Error("Failed to create encrypted file. Permission denied.");
+       }
 
        // 4. Delete original
        try {
@@ -455,11 +460,16 @@ class AndroidFileSystem {
 
       // 3. Write original file
       const newPath = id.substring(0, id.length - 4); // Remove .enc
-      await Filesystem.writeFile({
-        path: newPath,
-        data: decryptedData,
-        directory: Directory.ExternalStorage
-      });
+      try {
+        await Filesystem.writeFile({
+          path: newPath,
+          data: decryptedData,
+          directory: Directory.ExternalStorage,
+        });
+      } catch (writeError) {
+        console.error("Decryption write error:", writeError);
+        throw new Error("Failed to create decrypted file. Permission denied.");
+      }
 
       // 4. Delete encrypted
       try {
