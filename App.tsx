@@ -11,7 +11,7 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 import FileBrowserPane from './components/FileBrowserPane';
 import StorageChart from './components/StorageChart';
-import ContextMenu from './components/ContextMenu';
+import FileActionMenu from './components/FileActionMenu'; // Updated Import
 import FilePreview from './components/FilePreview';
 import FolderTree from './components/FolderTree';
 import AuthDialog from './components/AuthDialog';
@@ -22,7 +22,8 @@ import {
   Menu, Settings, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Clipboard, 
   Plus, RefreshCw, Archive, Layout, Moon, Sun, Columns, 
-  Smartphone, HardDrive, ArrowLeft, Clock, Star, RotateCcw
+  Smartphone, HardDrive, ArrowLeft, Clock, Star, RotateCcw,
+  MoreVertical 
 } from 'lucide-react';
 
 interface PreviewState {
@@ -189,6 +190,38 @@ const AppContent: React.FC = () => {
     setModal({ type: null });
   };
 
+  const handleCompress = async (name: string) => {
+    if (!name) return;
+    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    if (ids.length === 0) return;
+    try {
+       await fileSystem.compress(ids, name);
+       activePane.refreshFiles();
+       activePane.setSelectedIds(new Set());
+       setModal({ type: null });
+    } catch(e: any) { alert("Compression failed: " + e.message); }
+  };
+
+  const handleShare = async () => {
+     const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+     if (ids.length === 0) return;
+     // For mock / web, navigator.share with text
+     if (navigator.share) {
+        try {
+           const file = activePane.files.find(f => f.id === ids[0]);
+           await navigator.share({
+             title: file?.name || 'Shared Files',
+             text: `Sharing ${ids.length} files from Nova Explorer`,
+             url: window.location.href // In real app, share file URI or Content URI
+           });
+        } catch(e) {}
+     } else {
+        alert("Sharing not supported on this platform");
+     }
+     setModal({ type: null });
+     setContextMenu(null);
+  };
+
   const handleCreateFolder = async (name: string) => {
     if (!name) return;
     const parentId = activePane.currentPath.length > 0 ? activePane.currentPath[activePane.currentPath.length - 1].id : 'root';
@@ -206,18 +239,32 @@ const AppContent: React.FC = () => {
   const handleContextMenu = (e: React.MouseEvent, file: FileNode, paneId: PaneId) => {
     setActivePaneId(paneId);
     const pane = paneId === 'left' ? leftPane : rightPane;
+    // If not in selection, select it exclusively
     if (!pane.selectedIds.has(file.id)) {
       pane.setSelectedIds(new Set([file.id]));
     }
     setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id, paneId });
   };
 
+  const openSelectionMenu = () => {
+     if (activePane.selectedIds.size === 0) return;
+     setContextMenu({ x: 0, y: 0, fileId: undefined, paneId: activePaneId });
+  };
+
   const executeMenuAction = async (action: string) => {
-    const targetId = contextMenu?.fileId;
-    if (!targetId) return;
+    // If we have a specific file context (via 3-dots), use that. Otherwise use selection.
+    const specificFileId = contextMenu?.fileId;
+    const targetIds = specificFileId ? [specificFileId] : Array.from(activePane.selectedIds);
+    const pane = contextMenu?.paneId === 'left' ? leftPane : rightPane;
     
-    const pane = contextMenu.paneId === 'left' ? leftPane : rightPane;
-    
+    // Ensure the specific file is 'selected' for operations if not already
+    if (specificFileId && !pane.selectedIds.has(specificFileId)) {
+       pane.setSelectedIds(new Set([specificFileId]));
+    }
+
+    // Common Target (single)
+    const targetId = specificFileId || targetIds[0];
+
     switch(action) {
       case 'open': const f = pane.files.find(f => f.id === targetId); if(f) handleOpen(f, pane); break;
       case 'copy': handleCopy(false); break;
@@ -227,6 +274,8 @@ const AppContent: React.FC = () => {
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
       case 'encrypt': setModal({ type: 'ENCRYPT', targetId }); break;
+      case 'compress': setModal({ type: 'COMPRESS', targetId }); break;
+      case 'share': handleShare(); break;
       case 'bookmark': 
          await fileSystem.toggleBookmark(targetId);
          if (pane.currentPath.some(p => p.id === 'favorites')) pane.refreshFiles();
@@ -276,6 +325,9 @@ const AppContent: React.FC = () => {
       />
     );
   }
+
+  // Determine current active file for context menu (if single context)
+  const contextFile = contextMenu?.fileId ? activePane.files.find(f => f.id === contextMenu.fileId) : undefined;
 
   return (
     <div className="flex h-screen w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans transition-colors duration-300">
@@ -403,6 +455,7 @@ const AppContent: React.FC = () => {
             </button>
          </div>
 
+         {/* Selection Toolbar */}
          {activePane.selectedIds.size > 0 && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
                <span className="px-3 font-bold text-sm whitespace-nowrap">{activePane.selectedIds.size} selected</span>
@@ -417,6 +470,8 @@ const AppContent: React.FC = () => {
                    <button onClick={() => handleCopy(false)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="Copy"><Copy size={18}/></button>
                    <button onClick={() => handleCopy(true)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="Cut"><Scissors size={18}/></button>
                    <button onClick={handleDelete} className="p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-xl" title="Delete"><Trash2 size={18}/></button>
+                   <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                   <button onClick={openSelectionMenu} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="More"><MoreVertical size={18}/></button>
                  </>
                )}
                <button onClick={() => activePane.setSelectedIds(new Set())} className="px-3 text-xs font-bold uppercase text-slate-400">Cancel</button>
@@ -438,22 +493,20 @@ const AppContent: React.FC = () => {
       <SettingsDialog isOpen={modal.type === 'SETTINGS'} onClose={() => setModal({ type: null })} showHidden={activePane.showHidden} onToggleHidden={(v) => { leftPane.setShowHidden(v); rightPane.setShowHidden(v); }} showProtected={activePane.showHidden} onToggleProtected={() => {}} onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }} />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Name" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} actionLabel="Create" />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={activePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); activePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
+      <InputDialog isOpen={modal.type === 'COMPRESS'} title="Compress" defaultValue="archive.zip" onClose={() => setModal({ type: null })} onSubmit={handleCompress} actionLabel="Compress" />
       <InputDialog isOpen={modal.type === 'ENCRYPT' || modal.type === 'DECRYPT'} title={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} placeholder="Password" onClose={() => setModal({ type: null })} onSubmit={handleEncryption} actionLabel={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} />
       
       {previewState && <FilePreview file={previewState.file} url={previewState.url} content={previewState.content} onClose={() => setPreviewState(null)} onOpenExternal={() => fileSystem.openFile(previewState.file)} />}
       
-      {contextMenu && (
-        <ContextMenu 
-          x={contextMenu.x} y={contextMenu.y} 
-          onClose={() => setContextMenu(null)} 
-          onAction={executeMenuAction}
-          singleFile={true}
-          isFolder={activePane.files.find(f => f.id === contextMenu.fileId)?.type === 'folder'}
-          isProtected={false}
-          isTrash={activePane.currentPath.some(p => p.id === 'trash')}
-          isBookmarked={contextMenu.fileId ? fileSystem.isBookmarked(contextMenu.fileId) : false}
-        />
-      )}
+      <FileActionMenu 
+        isOpen={!!contextMenu}
+        onClose={() => setContextMenu(null)}
+        file={contextFile}
+        selectedCount={activePane.selectedIds.size}
+        onAction={executeMenuAction}
+        isTrash={activePane.currentPath.some(p => p.id === 'trash')}
+        isBookmarked={contextFile ? fileSystem.isBookmarked(contextFile.id) : false}
+      />
     </div>
   );
 };
