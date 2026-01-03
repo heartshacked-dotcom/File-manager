@@ -19,6 +19,14 @@ export enum PermissionStatus {
   UNKNOWN = 'UNKNOWN'
 }
 
+export interface StorageAnalysis {
+  pathId: string;
+  totalSize: number;
+  typeBreakdown: Record<string, number>;
+  folderBreakdown: { id: string; name: string; size: number }[];
+  largeFiles: FileNode[];
+}
+
 interface TrashEntry {
   id: string;
   originalPath: string;
@@ -443,6 +451,70 @@ class AndroidFileSystem {
 
   getStorageUsage() {
     return { used: 15 * 1024*1024*1024, total: TOTAL_STORAGE, breakdown: {} };
+  }
+
+  // --- Recursive Analysis Logic ---
+  
+  async analyzeStorage(pathId: string): Promise<StorageAnalysis> {
+    const analysis: StorageAnalysis = {
+      pathId,
+      totalSize: 0,
+      typeBreakdown: { image: 0, video: 0, audio: 0, document: 0, archive: 0, unknown: 0, folder: 0 },
+      folderBreakdown: [],
+      largeFiles: []
+    };
+
+    const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
+    const MAX_DEPTH = 3; // Limit depth to prevent UI freeze on huge trees
+    
+    // Internal recursive scanner
+    const scan = async (currentPath: string, depth: number): Promise<number> => {
+       if (depth > MAX_DEPTH) return 0;
+       
+       let dirTotal = 0;
+       try {
+          const res = await Filesystem.readdir({ path: currentPath, directory: Directory.ExternalStorage });
+          
+          for (const f of res.files) {
+             if (f.name.startsWith('.')) continue; // Skip hidden
+             const fullPath = currentPath ? `${currentPath}/${f.name}` : f.name;
+             const type = getFileType(f.name, f.type === 'directory');
+             
+             if (f.type === 'directory') {
+                const subSize = await scan(fullPath, depth + 1);
+                dirTotal += subSize;
+                // Add to breakdown only if we are at the top level of analysis
+                if (depth === 0) {
+                   analysis.folderBreakdown.push({ id: fullPath, name: f.name, size: subSize });
+                }
+             } else {
+                const size = f.size;
+                dirTotal += size;
+                analysis.typeBreakdown[type] = (analysis.typeBreakdown[type] || 0) + size;
+                
+                // Track large files
+                if (size > LARGE_FILE_THRESHOLD || analysis.largeFiles.length < 10) {
+                   analysis.largeFiles.push({
+                      id: fullPath, parentId: currentPath, name: f.name, type, size, updatedAt: f.mtime
+                   });
+                   // Keep only top 10 largest
+                   analysis.largeFiles.sort((a,b) => b.size - a.size);
+                   if (analysis.largeFiles.length > 10) analysis.largeFiles.pop();
+                }
+             }
+          }
+       } catch (e) { /* ignore access issues */ }
+       return dirTotal;
+    };
+
+    // Normalize path
+    let startPath = (pathId === 'root_internal' || pathId === 'root') ? '' : pathId;
+    if (pathId === 'root_sd') return analysis; // Basic logic doesn't support sd scan yet
+
+    analysis.totalSize = await scan(startPath, 0);
+    analysis.folderBreakdown.sort((a,b) => b.size - a.size);
+
+    return analysis;
   }
 
   async createFolder(parentId: string, name: string): Promise<void> {

@@ -10,7 +10,7 @@ import { useFilePane } from './hooks/useFilePane';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 import FileBrowserPane from './components/FileBrowserPane';
-import StorageChart from './components/StorageChart';
+import StorageAnalyzer from './components/StorageAnalyzer';
 import FileActionMenu from './components/FileActionMenu'; 
 import FilePreview from './components/FilePreview';
 import FolderTree from './components/FolderTree';
@@ -596,12 +596,7 @@ const AppContent: React.FC = () => {
       />
 
       {showStorage && (
-         <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 animate-in slide-in-from-bottom-full duration-300">
-            <div className="p-4">
-               <button onClick={() => setShowStorage(false)} className="mb-4 flex items-center text-blue-500"><ArrowLeft className="mr-2"/> Back</button>
-               <StorageChart used={storageStats.used} total={storageStats.total} />
-            </div>
-         </div>
+         <StorageAnalyzer onClose={() => setShowStorage(false)} />
       )}
       
       <AuthDialog isOpen={modal.type === 'AUTH'} mode={vaultPinHash ? 'ENTER' : 'CREATE'} onSuccess={handleAuthSuccess} onClose={() => setModal({ type: null })} />
