@@ -100,7 +100,7 @@ const AppContent: React.FC = () => {
   const handleOpen = async (file: FileNode, pane: ReturnType<typeof useFilePane>) => {
     // Handle Shortcuts
     if (file.id === 'downloads_shortcut') {
-       pane.navigateTo('downloads');
+       pane.navigateTo('Download'); // Standard Android Downloads folder is 'Download'
        return;
     }
 

@@ -35,7 +35,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
   const {
     currentPath, files, selectedIds, setSelectedIds, lastFocusedId, setLastFocusedId,
     viewMode, setViewMode, sortField, setSortField, sortDirection, setSortDirection,
-    searchQuery, setSearchQuery, filterType, setFilterType,
+    searchQuery, setSearchQuery, filterType, setFilterType, showHidden, setShowHidden,
     canGoBack, canGoForward, goBack, goForward, navigateTo, navigateUp, refreshFiles
   } = paneState;
 
@@ -151,6 +151,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
               filterType={filterType} setFilterType={setFilterType}
               filterDate={'ALL'} setFilterDate={() => {}} // Simplified for pane
               filterSize={'ALL'} setFilterSize={() => {}}
+              showHidden={showHidden} setShowHidden={setShowHidden}
               onClose={() => setShowFilter(false)}
            />
         </div>

@@ -169,7 +169,8 @@ class AndroidFileSystem {
 
   // --- Recent Files ---
   async getRecentFiles(): Promise<FileNode[]> {
-     const folders = ['Downloads', 'DCIM', 'Documents', 'Music', 'Movies', 'Pictures'];
+     // 'Download' is the standard folder name, not 'Downloads'
+     const folders = ['Download', 'DCIM', 'Documents', 'Music', 'Movies', 'Pictures'];
      let all: FileNode[] = [];
      
      const safeRead = async (path: string) => {
@@ -417,7 +418,11 @@ class AndroidFileSystem {
       nodes = nodes.filter(f => f.name !== TRASH_FOLDER);
 
       return nodes;
-    } catch (e) {
+    } catch (e: any) {
+      // Suppress 'Folder does not exist' errors to avoid console noise when navigating to empty drives or optional paths
+      if (e.message && (e.message.includes('Folder does not exist') || e.message.includes('does not exist'))) {
+         return [];
+      }
       console.error("Read dir error", e);
       return [];
     }
