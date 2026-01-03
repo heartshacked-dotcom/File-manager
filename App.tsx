@@ -11,7 +11,7 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 import FileBrowserPane from './components/FileBrowserPane';
 import StorageChart from './components/StorageChart';
-import FileActionMenu from './components/FileActionMenu'; // Updated Import
+import FileActionMenu from './components/FileActionMenu'; 
 import FilePreview from './components/FilePreview';
 import FolderTree from './components/FolderTree';
 import AuthDialog from './components/AuthDialog';
@@ -124,18 +124,26 @@ const AppContent: React.FC = () => {
            }
            return;
         }
-        if (['image', 'video', 'audio', 'document'].includes(file.type) || file.name.match(/\.(txt|md|json|js|ts|css|html|log)$/i)) {
+
+        // Preview Logic
+        const isPdf = file.name.toLowerCase().endsWith('.pdf');
+        const isText = file.name.match(/\.(txt|md|json|js|ts|css|html|log|xml|c|cpp|py|java|ini|conf)$/i);
+        const isMedia = ['image', 'video', 'audio'].includes(file.type);
+
+        if (isMedia || isText || isPdf) {
            try {
              let url, content;
-             if (['image', 'video', 'audio'].includes(file.type)) {
+             if (isMedia || isPdf) {
                 url = await fileSystem.getFileUrl(file.id);
-             } else {
+             } else if (isText) {
                 content = await fileSystem.readTextFile(file.id);
              }
              setPreviewState({ file, url, content });
              return;
            } catch (e) { console.error("Preview failed", e); }
         } 
+
+        // Fallback to default opener
         await fileSystem.openFile(file);
       } catch (e: any) {
         alert("Cannot open file: " + e.message);
