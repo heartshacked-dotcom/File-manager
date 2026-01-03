@@ -14,7 +14,7 @@ import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Search, Grid, List, Plus, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
-  Download, Music, Video, Image, FileText, HardDrive, RefreshCw, Filter
+  Download, Music, Video, Image, FileText, HardDrive, RefreshCw, Filter, Settings
 } from 'lucide-react';
 
 interface PreviewState {
@@ -29,6 +29,9 @@ const App: React.FC = () => {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.GRID);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  // Permission State
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   
   // Sorting & Filtering State
   const [sortField, setSortField] = useState<SortField>(SortField.NAME);
@@ -53,8 +56,11 @@ const App: React.FC = () => {
 
   // --- Initialization ---
   useEffect(() => {
-    // Initialize FileSystem (Permissions, etc)
-    fileSystem.init().catch(console.error);
+    const checkPermissions = async () => {
+      const granted = await fileSystem.init();
+      setPermissionGranted(granted);
+    };
+    checkPermissions();
   }, []);
 
   // --- Data Loading ---
@@ -73,9 +79,11 @@ const App: React.FC = () => {
   }, [currentPath, showHidden, isTrashView]);
 
   useEffect(() => {
-    refreshFiles();
-    setSelectedIds(new Set());
-  }, [refreshFiles]);
+    if (permissionGranted) {
+      refreshFiles();
+      setSelectedIds(new Set());
+    }
+  }, [refreshFiles, permissionGranted]);
 
   // --- Filtering & Sorting Pipeline ---
   const displayedFiles = useMemo(() => {
@@ -295,6 +303,50 @@ const App: React.FC = () => {
     }
     setContextMenu(null);
   };
+
+  // --- Permission Gate ---
+  
+  if (permissionGranted === false) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-200 p-6 text-center animate-in fade-in duration-500">
+         <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-red-500/30">
+           <Shield size={48} className="text-red-400" />
+         </div>
+         <h2 className="text-2xl font-bold mb-3">Storage Access Required</h2>
+         <p className="text-slate-400 mb-8 max-w-sm leading-relaxed">
+           Nova needs full access to your files to function as a file manager. Please grant "All files access" in your device settings.
+         </p>
+         <div className="flex flex-col gap-3 w-full max-w-xs">
+           <button 
+             onClick={async () => {
+                await fileSystem.openSettings();
+                // Check again after a delay in case they switch back immediately
+                setTimeout(async () => {
+                    const granted = await fileSystem.init();
+                    setPermissionGranted(granted);
+                }, 1000); 
+             }}
+             className="px-6 py-3.5 bg-blue-600 rounded-xl font-medium hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
+           >
+             <Settings size={20} /> Open Settings
+           </button>
+           <button 
+             onClick={async () => {
+                 const granted = await fileSystem.init();
+                 setPermissionGranted(granted);
+             }}
+             className="px-6 py-3.5 rounded-xl font-medium text-slate-300 hover:bg-slate-800 transition-colors border border-slate-700"
+           >
+             I have granted access
+           </button>
+         </div>
+      </div>
+    );
+  }
+
+  if (permissionGranted === null) {
+     return <div className="h-screen bg-slate-950 flex items-center justify-center text-slate-500 font-medium tracking-wide animate-pulse">Initializing...</div>;
+  }
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">

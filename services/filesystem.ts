@@ -3,6 +3,7 @@ import { TOTAL_STORAGE } from '../constants';
 import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 
 const TRASH_FOLDER = '.nova_trash';
 
@@ -21,11 +22,14 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
 class AndroidFileSystem {
   
   // Initialize permissions and hidden folders
-  async init() {
+  async init(): Promise<boolean> {
     try {
       const status = await Filesystem.checkPermissions();
       if (status.publicStorage !== 'granted') {
-        await Filesystem.requestPermissions();
+        const request = await Filesystem.requestPermissions();
+        if (request.publicStorage !== 'granted') {
+           return false;
+        }
       }
       // Create trash folder if not exists
       try {
@@ -37,8 +41,18 @@ class AndroidFileSystem {
       } catch (e) {
         // Ignore if exists
       }
+      return true;
     } catch (e) {
       console.error("Permission request failed", e);
+      return false;
+    }
+  }
+
+  async openSettings() {
+    try {
+      await App.openSettings();
+    } catch (e) {
+      console.error("Failed to open settings", e);
     }
   }
 
