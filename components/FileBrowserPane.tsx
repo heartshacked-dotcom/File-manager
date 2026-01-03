@@ -1,38 +1,34 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { FileNode, PaneId, ViewMode } from '../types';
+import { FileNode, ViewMode } from '../types';
 import FileList from './FileList';
 import Breadcrumbs from './Breadcrumbs';
 import SortFilterControl from './SortFilterControl';
 import { 
   ChevronLeft, ChevronRight, Grid, List, Search, Filter, 
-  ArrowUp, RotateCw, MoreVertical, Loader2, Trash2
+  ArrowUp, RotateCw, MoreVertical, Loader2, Trash2, Menu
 } from 'lucide-react';
 import { useFilePane } from '../hooks/useFilePane';
 
 interface FileBrowserPaneProps {
-  id: PaneId;
-  isActive: boolean;
-  onFocus: () => void;
   paneState: ReturnType<typeof useFilePane>;
   onOpen: (file: FileNode) => void;
   onContextMenu: (e: React.MouseEvent, file: FileNode) => void;
   onDropFile: (sourceId: string, targetFolderId: string) => void;
   onSearch?: () => void;
   onEmptyTrash?: () => void;
+  onToggleSidebar?: () => void;
   className?: string;
 }
 
 const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
-  id,
-  isActive,
-  onFocus,
   paneState,
   onOpen,
   onContextMenu,
   onDropFile,
   onSearch,
   onEmptyTrash,
+  onToggleSidebar,
   className
 }) => {
   const [showFilter, setShowFilter] = useState(false);
@@ -115,15 +111,15 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
 
   return (
     <div 
-      onClick={onFocus}
-      className={`flex flex-col h-full bg-white dark:bg-slate-950 border-2 rounded-xl overflow-hidden transition-colors duration-200 ${
-        isActive ? 'border-blue-500 shadow-md' : 'border-slate-200 dark:border-slate-800'
-      } ${className}`}
+      className={`flex flex-col h-full bg-white dark:bg-slate-950 border-2 rounded-xl overflow-hidden transition-colors duration-200 border-slate-200 dark:border-slate-800 ${className}`}
     >
       {/* Pane Toolbar */}
-      <div className={`flex items-center p-2 border-b gap-1 flex-shrink-0 ${
-        isActive ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800'
-      }`}>
+      <div className="flex items-center p-2 border-b gap-1 flex-shrink-0 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+         {onToggleSidebar && (
+            <button onClick={onToggleSidebar} className="md:hidden p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 mr-1">
+               <Menu size={18} />
+            </button>
+         )}
          <button onClick={goBack} disabled={!canGoBack} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30">
             <ChevronLeft size={18} />
          </button>

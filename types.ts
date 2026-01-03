@@ -56,5 +56,3 @@ export interface ModalState {
 }
 
 export type Theme = 'dark' | 'light';
-
-export type PaneId = 'left' | 'right';

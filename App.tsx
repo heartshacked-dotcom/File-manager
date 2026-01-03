@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { 
-  FileNode, ClipboardState, ModalState, PaneId
+  FileNode, ClipboardState, ModalState
 } from './types';
 import { fileSystem, PermissionStatus } from './services/filesystem';
 import { SecurityService } from './services/security';
@@ -20,13 +20,12 @@ import SettingsDialog from './components/SettingsDialog';
 import PermissionScreen from './components/PermissionScreen';
 import CompressionModal from './components/CompressionModal';
 import EncryptionDialog from './components/EncryptionDialog';
-import { InputDialog, PropertiesDialog } from './components/Dialogs';
+import { InputDialog } from './components/Dialogs';
 import { 
   Menu, Settings, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Clipboard, 
-  Plus, RefreshCw, Archive, Layout, Moon, Sun, Columns, 
-  Smartphone, HardDrive, ArrowLeft, Clock, Star, RotateCcw,
-  MoreVertical, Lock
+  Plus, Smartphone, HardDrive, Clock, Star, RotateCcw,
+  MoreVertical, Lock, Sun, Moon
 } from 'lucide-react';
 
 const VAULT_FOLDER = 'Secure Vault';
@@ -51,29 +50,22 @@ const AppContent: React.FC = () => {
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const [vaultPinHash, setVaultPinHash] = useState<string | null>(localStorage.getItem('nova_vault_pin'));
   
-  // --- Panes ---
-  // Only initialize panes if permissions are granted/scoped
+  // --- Pane ---
+  // Only initialize pane if permissions are granted/scoped
   const isReady = permStatus === PermissionStatus.GRANTED || permStatus === PermissionStatus.SCOPED;
-  
-  const leftPane = useFilePane('root', isReady); // Default to Root screen
-  const rightPane = useFilePane('root_sd', isReady);
-  const [activePaneId, setActivePaneId] = useState<PaneId>('left');
-  const [dualPaneEnabled, setDualPaneEnabled] = useState(false);
-  
-  const activePane = activePaneId === 'left' ? leftPane : rightPane;
+  const filePane = useFilePane('root', isReady);
 
   // --- UI State ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string, paneId: PaneId } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string } | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [compressionState, setCompressionState] = useState<CompressionState>({ isOpen: false, mode: 'COMPRESS', files: [] });
   const [encryptionModal, setEncryptionModal] = useState<{ isOpen: boolean, mode: 'ENCRYPT' | 'DECRYPT', files: FileNode[] }>({ isOpen: false, mode: 'ENCRYPT', files: [] });
   
   const [showStorage, setShowStorage] = useState(false);
-  const [storageStats, setStorageStats] = useState({ used: 0, total: 0 });
 
   // --- Initialization & Permissions ---
   const checkPermissions = useCallback(async () => {
@@ -83,7 +75,6 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     checkPermissions();
-    if (window.innerWidth > 1024) setDualPaneEnabled(true);
     
     // Auto-Lock Vault on Background
     const listener = CapacitorApp.addListener('appStateChange', async ({ isActive }) => {
@@ -95,7 +86,6 @@ const AppContent: React.FC = () => {
       } else {
          // App going to background -> Lock Vault
          setVaultUnlocked(false);
-         // Optionally navigate away from vault if open, but simple locking state is enough for next render check
       }
     });
 
@@ -103,14 +93,12 @@ const AppContent: React.FC = () => {
   }, [checkPermissions, permStatus]);
 
   // Navigate Logic with Vault Protection
-  const handleNavigate = (pane: ReturnType<typeof useFilePane>, id: string) => {
+  const handleNavigate = (id: string) => {
     if (id === VAULT_FOLDER && !vaultUnlocked) {
-       // Trigger Auth
-       setActivePaneId(pane === leftPane ? 'left' : 'right');
        setModal({ type: 'AUTH', targetId: id });
        return;
     }
-    pane.navigateTo(id);
+    filePane.navigateTo(id);
   };
 
   const handleGrantFull = async () => {
@@ -126,15 +114,15 @@ const AppContent: React.FC = () => {
      return success;
   };
 
-  const handleOpen = async (file: FileNode, pane: ReturnType<typeof useFilePane>) => {
+  const handleOpen = async (file: FileNode) => {
     // Handle Shortcuts
     if (file.id === 'downloads_shortcut') {
-       handleNavigate(pane, 'Download');
+       handleNavigate('Download');
        return;
     }
 
     if (file.type === 'folder') {
-      handleNavigate(pane, file.id);
+      handleNavigate(file.id);
     } else {
       try {
         if (file.isEncrypted) {
@@ -184,45 +172,44 @@ const AppContent: React.FC = () => {
   const handleReveal = async (file: FileNode) => {
     setShowSearch(false);
     if (file.parentId) {
-      handleNavigate(activePane, file.parentId);
-      activePane.setSelectedIds(new Set([file.id]));
+      handleNavigate(file.parentId);
+      filePane.setSelectedIds(new Set([file.id]));
     }
   };
 
   const handleCopy = (isCut: boolean) => {
-    const ids = Array.from(activePane.selectedIds);
+    const ids = Array.from(filePane.selectedIds);
     if (ids.length === 0) return;
-    const parentId = activePane.currentPath.length > 0 ? activePane.currentPath[activePane.currentPath.length - 1].id : 'root';
+    const parentId = filePane.currentPath.length > 0 ? filePane.currentPath[filePane.currentPath.length - 1].id : 'root';
     setClipboard({ mode: isCut ? 'cut' : 'copy', sourceIds: ids, sourceParentId: parentId });
-    activePane.setSelectedIds(new Set());
+    filePane.setSelectedIds(new Set());
     setContextMenu(null);
   };
 
   const handlePaste = async () => {
     if (!clipboard) return;
     try {
-      const targetId = activePane.currentPath.length > 0 ? activePane.currentPath[activePane.currentPath.length - 1].id : 'root';
+      const targetId = filePane.currentPath.length > 0 ? filePane.currentPath[filePane.currentPath.length - 1].id : 'root';
       if (clipboard.mode === 'copy') await fileSystem.copy(clipboard.sourceIds, targetId);
       else await fileSystem.move(clipboard.sourceIds, targetId);
       setClipboard(null);
-      leftPane.refreshFiles();
-      rightPane.refreshFiles();
+      filePane.refreshFiles();
     } catch (e: any) { alert("Paste failed: " + e.message); }
   };
 
   const handleDelete = async () => {
-    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    const ids = modal.targetId ? [modal.targetId] : Array.from(filePane.selectedIds);
     if (ids.length === 0) return;
     
     // Check if we are in Trash
-    const isTrash = activePane.currentPath.some(p => p.id === 'trash');
+    const isTrash = filePane.currentPath.some(p => p.id === 'trash');
 
     if (confirm(isTrash ? `Permanently delete ${ids.length} items?` : `Move ${ids.length} items to Recycle Bin?`)) {
        if (isTrash) await fileSystem.deletePermanent(ids);
        else await fileSystem.trash(ids);
        
-       activePane.refreshFiles();
-       activePane.setSelectedIds(new Set());
+       filePane.refreshFiles();
+       filePane.setSelectedIds(new Set());
        setModal({ type: null });
     }
   };
@@ -230,32 +217,31 @@ const AppContent: React.FC = () => {
   const handleEmptyTrash = async () => {
     if (confirm("Are you sure you want to permanently delete all items in the Recycle Bin? This action cannot be undone.")) {
       await fileSystem.emptyTrash();
-      leftPane.refreshFiles();
-      rightPane.refreshFiles();
+      filePane.refreshFiles();
     }
   };
 
   const handleRestore = async () => {
-    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    const ids = modal.targetId ? [modal.targetId] : Array.from(filePane.selectedIds);
     if (ids.length === 0) return;
     await fileSystem.restore(ids);
-    activePane.refreshFiles();
-    activePane.setSelectedIds(new Set());
+    filePane.refreshFiles();
+    filePane.setSelectedIds(new Set());
     setModal({ type: null });
   };
 
   const triggerCompress = () => {
-    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    const ids = modal.targetId ? [modal.targetId] : Array.from(filePane.selectedIds);
     if (ids.length === 0) return;
-    const filesToCompress = activePane.files.filter(f => ids.includes(f.id));
+    const filesToCompress = filePane.files.filter(f => ids.includes(f.id));
     setCompressionState({ isOpen: true, mode: 'COMPRESS', files: filesToCompress });
     setModal({ type: null }); 
   };
 
   const triggerEncrypt = () => {
-    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    const ids = modal.targetId ? [modal.targetId] : Array.from(filePane.selectedIds);
     if (ids.length === 0) return;
-    const files = activePane.files.filter(f => ids.includes(f.id));
+    const files = filePane.files.filter(f => ids.includes(f.id));
     // Determine mode based on first file selection (simplified)
     const mode = files[0].isEncrypted ? 'DECRYPT' : 'ENCRYPT';
     setEncryptionModal({ isOpen: true, mode, files });
@@ -271,8 +257,8 @@ const AppContent: React.FC = () => {
         } else {
            await fileSystem.decryptFiles(ids, password);
         }
-        activePane.refreshFiles();
-        activePane.setSelectedIds(new Set());
+        filePane.refreshFiles();
+        filePane.setSelectedIds(new Set());
         setEncryptionModal(prev => ({ ...prev, isOpen: false }));
      } catch (e: any) {
         alert("Operation failed: " + e.message);
@@ -280,11 +266,11 @@ const AppContent: React.FC = () => {
   };
 
   const handleShare = async () => {
-     const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+     const ids = modal.targetId ? [modal.targetId] : Array.from(filePane.selectedIds);
      if (ids.length === 0) return;
      if (navigator.share) {
         try {
-           const file = activePane.files.find(f => f.id === ids[0]);
+           const file = filePane.files.find(f => f.id === ids[0]);
            await navigator.share({
              title: file?.name || 'Shared Files',
              text: `Sharing ${ids.length} files from Nova Explorer`,
@@ -300,45 +286,41 @@ const AppContent: React.FC = () => {
 
   const handleCreateFolder = async (name: string) => {
     if (!name) return;
-    const parentId = activePane.currentPath.length > 0 ? activePane.currentPath[activePane.currentPath.length - 1].id : 'root';
+    const parentId = filePane.currentPath.length > 0 ? filePane.currentPath[filePane.currentPath.length - 1].id : 'root';
     await fileSystem.createFolder(parentId, name);
-    activePane.refreshFiles();
+    filePane.refreshFiles();
     setModal({ type: null });
   };
 
   const handleDropMove = async (sourceId: string, targetFolderId: string) => {
     await fileSystem.move([sourceId], targetFolderId);
-    leftPane.refreshFiles();
-    rightPane.refreshFiles();
+    filePane.refreshFiles();
   };
 
-  const handleContextMenu = (e: React.MouseEvent, file: FileNode, paneId: PaneId) => {
-    setActivePaneId(paneId);
-    const pane = paneId === 'left' ? leftPane : rightPane;
-    if (!pane.selectedIds.has(file.id)) {
-      pane.setSelectedIds(new Set([file.id]));
+  const handleContextMenu = (e: React.MouseEvent, file: FileNode) => {
+    if (!filePane.selectedIds.has(file.id)) {
+      filePane.setSelectedIds(new Set([file.id]));
     }
-    setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id, paneId });
+    setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
   };
 
   const openSelectionMenu = () => {
-     if (activePane.selectedIds.size === 0) return;
-     setContextMenu({ x: 0, y: 0, fileId: undefined, paneId: activePaneId });
+     if (filePane.selectedIds.size === 0) return;
+     setContextMenu({ x: 0, y: 0, fileId: undefined });
   };
 
   const executeMenuAction = async (action: string) => {
     const specificFileId = contextMenu?.fileId;
-    const targetIds = specificFileId ? [specificFileId] : Array.from(activePane.selectedIds);
-    const pane = contextMenu?.paneId === 'left' ? leftPane : rightPane;
+    const targetIds = specificFileId ? [specificFileId] : Array.from(filePane.selectedIds);
     
-    if (specificFileId && !pane.selectedIds.has(specificFileId)) {
-       pane.setSelectedIds(new Set([specificFileId]));
+    if (specificFileId && !filePane.selectedIds.has(specificFileId)) {
+       filePane.setSelectedIds(new Set([specificFileId]));
     }
 
     const targetId = specificFileId || targetIds[0];
 
     switch(action) {
-      case 'open': const f = pane.files.find(f => f.id === targetId); if(f) handleOpen(f, pane); break;
+      case 'open': const f = filePane.files.find(f => f.id === targetId); if(f) handleOpen(f); break;
       case 'copy': handleCopy(false); break;
       case 'cut': handleCopy(true); break;
       case 'delete': handleDelete(); break;
@@ -350,7 +332,7 @@ const AppContent: React.FC = () => {
       case 'share': handleShare(); break;
       case 'bookmark': 
          await fileSystem.toggleBookmark(targetId);
-         if (pane.currentPath.some(p => p.id === 'favorites')) pane.refreshFiles();
+         if (filePane.currentPath.some(p => p.id === 'favorites')) filePane.refreshFiles();
          break;
     }
     setContextMenu(null);
@@ -362,7 +344,7 @@ const AppContent: React.FC = () => {
        // Biometric success flow
        setVaultUnlocked(true);
        setModal({ type: null });
-       if (modal.targetId) activePane.navigateTo(modal.targetId);
+       if (modal.targetId) filePane.navigateTo(modal.targetId);
        return;
     }
 
@@ -372,14 +354,14 @@ const AppContent: React.FC = () => {
          setVaultPinHash(h);
          setVaultUnlocked(true);
          setModal({ type: null });
-         if(modal.targetId) activePane.navigateTo(modal.targetId);
+         if(modal.targetId) filePane.navigateTo(modal.targetId);
        });
     } else {
        SecurityService.verifyPin(pin, vaultPinHash).then(ok => {
          if(ok) {
            setVaultUnlocked(true);
            setModal({ type: null });
-           if(modal.targetId) activePane.navigateTo(modal.targetId);
+           if(modal.targetId) filePane.navigateTo(modal.targetId);
          } else alert("Wrong PIN");
        });
     }
@@ -397,9 +379,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  const contextFile = contextMenu?.fileId ? activePane.files.find(f => f.id === contextMenu.fileId) : undefined;
+  const contextFile = contextMenu?.fileId ? filePane.files.find(f => f.id === contextMenu.fileId) : undefined;
   // If active path is inside vault and locked (shouldn't happen with guards, but for UI safety)
-  const isVaultProtected = activePane.currentPath.some(p => p.id === VAULT_FOLDER) && !vaultUnlocked;
+  const isVaultProtected = filePane.currentPath.some(p => p.id === VAULT_FOLDER) && !vaultUnlocked;
 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans transition-colors duration-300">
@@ -413,32 +395,32 @@ const AppContent: React.FC = () => {
         
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
            <div className="px-4 pt-4 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Drives</div>
-           <button onClick={() => { setActivePaneId('left'); handleNavigate(leftPane, 'root_internal'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+           <button onClick={() => { handleNavigate('root_internal'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <Smartphone size={18} className="mr-3" /> Internal Storage
            </button>
-           <button onClick={() => { setActivePaneId('left'); handleNavigate(leftPane, 'root_sd'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+           <button onClick={() => { handleNavigate('root_sd'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <HardDrive size={18} className="mr-3" /> SD Card
            </button>
            
            <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Access</div>
-           <button onClick={() => { activePane.navigateTo('recent'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+           <button onClick={() => { filePane.navigateTo('recent'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <Clock size={18} className="mr-3" /> Recent Files
            </button>
-           <button onClick={() => { activePane.navigateTo('favorites'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+           <button onClick={() => { filePane.navigateTo('favorites'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <Star size={18} className="mr-3" /> Favorites
            </button>
            
            <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Locations</div>
-           <FolderTree onNavigate={(id) => { handleNavigate(activePane, id); setSidebarOpen(false); }} activePathIds={new Set(activePane.currentPath.map(n => n.id))} />
+           <FolderTree onNavigate={(id) => { handleNavigate(id); setSidebarOpen(false); }} activePathIds={new Set(filePane.currentPath.map(n => n.id))} />
            
            <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Tools</div>
-           <button onClick={() => { handleNavigate(activePane, VAULT_FOLDER); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 dark:hover:text-amber-400 transition-colors">
+           <button onClick={() => { handleNavigate(VAULT_FOLDER); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 dark:hover:text-amber-400 transition-colors">
               <Shield size={18} className="mr-3" /> Secure Vault
            </button>
            <button onClick={() => setShowStorage(true)} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <ChartIcon size={18} className="mr-3" /> Storage Analysis
            </button>
-           <button onClick={() => { activePane.navigateTo('trash'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-500 dark:hover:text-red-400 transition-colors">
+           <button onClick={() => { filePane.navigateTo('trash'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-500 dark:hover:text-red-400 transition-colors">
               <Trash2 size={18} className="mr-3" /> Recycle Bin
            </button>
            <button onClick={() => setModal({ type: 'SETTINGS' })} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -456,30 +438,7 @@ const AppContent: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-         <header className="flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 md:hidden z-20 pt-[env(safe-area-inset-top)] h-[calc(4rem+env(safe-area-inset-top))] flex-shrink-0">
-            <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 text-slate-600 dark:text-slate-400">
-               <Menu size={24} />
-            </button>
-            <span className="font-semibold">Nova Explorer</span>
-            <button onClick={() => setDualPaneEnabled(!dualPaneEnabled)} className={`p-2 rounded-lg ${dualPaneEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400'}`}>
-               <Columns size={20} />
-            </button>
-         </header>
-
-         <div className="hidden md:flex absolute top-4 right-6 z-30 gap-2">
-            <button 
-              onClick={() => setDualPaneEnabled(!dualPaneEnabled)} 
-              className={`p-2 rounded-lg border transition-all shadow-sm ${
-                dualPaneEnabled 
-                  ? 'bg-blue-600 text-white border-blue-600' 
-                  : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-blue-400'
-              }`}
-              title="Toggle Dual Pane"
-            >
-               <Columns size={18} />
-            </button>
-         </div>
-
+         
          {/* Pane Container */}
          {isVaultProtected ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
@@ -490,46 +449,18 @@ const AppContent: React.FC = () => {
                </button>
             </div>
          ) : (
-           <div className="flex-1 flex overflow-hidden p-2 gap-2 relative">
-              <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'left' ? 'w-full' : 'hidden md:block md:w-full')}`}>
+           <div className="flex-1 flex overflow-hidden pt-[calc(env(safe-area-inset-top))] gap-2 relative">
+              <div className="flex-1 min-w-0 h-full w-full">
                  <FileBrowserPane 
-                    id="left"
-                    isActive={activePaneId === 'left'}
-                    onFocus={() => setActivePaneId('left')}
-                    paneState={leftPane}
-                    onOpen={(f) => handleOpen(f, leftPane)}
-                    onContextMenu={(e, f) => handleContextMenu(e, f, 'left')}
+                    paneState={filePane}
+                    onOpen={handleOpen}
+                    onContextMenu={handleContextMenu}
                     onDropFile={handleDropMove}
                     onSearch={() => setShowSearch(true)}
                     onEmptyTrash={handleEmptyTrash}
+                    onToggleSidebar={() => setSidebarOpen(true)}
                  />
               </div>
-              {(dualPaneEnabled || activePaneId === 'right') && (
-                <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'right' ? 'w-full' : 'hidden')}`}>
-                   <FileBrowserPane 
-                      id="right"
-                      isActive={activePaneId === 'right'}
-                      onFocus={() => setActivePaneId('right')}
-                      paneState={rightPane}
-                      onOpen={(f) => handleOpen(f, rightPane)}
-                      onContextMenu={(e, f) => handleContextMenu(e, f, 'right')}
-                      onDropFile={handleDropMove}
-                      onSearch={() => setShowSearch(true)}
-                      onEmptyTrash={handleEmptyTrash}
-                   />
-                </div>
-              )}
-           </div>
-         )}
-
-         {!dualPaneEnabled && (
-           <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
-              <button onClick={() => setActivePaneId('left')} className={`flex-1 h-14 flex flex-col items-center justify-center ${activePaneId === 'left' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
-                 <Layout size={20} /><span className="text-[10px] font-medium">Pane 1</span>
-              </button>
-              <button onClick={() => setActivePaneId('right')} className={`flex-1 h-14 flex flex-col items-center justify-center ${activePaneId === 'right' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
-                 <Layout size={20} /><span className="text-[10px] font-medium">Pane 2</span>
-              </button>
            </div>
          )}
          
@@ -545,11 +476,11 @@ const AppContent: React.FC = () => {
          </div>
 
          {/* Selection Toolbar */}
-         {activePane.selectedIds.size > 0 && (
+         {filePane.selectedIds.size > 0 && (
             <div className="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
-               <span className="px-3 font-bold text-sm whitespace-nowrap">{activePane.selectedIds.size} selected</span>
+               <span className="px-3 font-bold text-sm whitespace-nowrap">{filePane.selectedIds.size} selected</span>
                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-               {activePane.currentPath.some(p => p.id === 'trash') ? (
+               {filePane.currentPath.some(p => p.id === 'trash') ? (
                  <>
                    <button onClick={handleRestore} className="p-3 hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl" title="Restore"><RotateCcw size={18}/></button>
                    <button onClick={handleDelete} className="p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-xl" title="Delete Forever"><Trash2 size={18}/></button>
@@ -563,7 +494,7 @@ const AppContent: React.FC = () => {
                    <button onClick={openSelectionMenu} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="More"><MoreVertical size={18}/></button>
                  </>
                )}
-               <button onClick={() => activePane.setSelectedIds(new Set())} className="px-3 text-xs font-bold uppercase text-slate-400">Cancel</button>
+               <button onClick={() => filePane.setSelectedIds(new Set())} className="px-3 text-xs font-bold uppercase text-slate-400">Cancel</button>
             </div>
          )}
       </div>
@@ -572,7 +503,7 @@ const AppContent: React.FC = () => {
       <SearchScreen 
         isOpen={showSearch} 
         onClose={() => setShowSearch(false)} 
-        onNavigate={(f) => { setShowSearch(false); handleNavigate(activePane, f.id); }}
+        onNavigate={(f) => { setShowSearch(false); handleNavigate(f.id); }}
         onReveal={handleReveal}
       />
 
@@ -582,8 +513,8 @@ const AppContent: React.FC = () => {
         files={compressionState.files}
         onClose={() => setCompressionState(prev => ({ ...prev, isOpen: false }))}
         onSuccess={() => {
-           activePane.refreshFiles();
-           activePane.setSelectedIds(new Set());
+           filePane.refreshFiles();
+           filePane.setSelectedIds(new Set());
         }}
       />
       
@@ -611,7 +542,7 @@ const AppContent: React.FC = () => {
         permStatus={permStatus}
       />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Name" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} actionLabel="Create" />
-      <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={activePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); activePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
+      <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={filePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); filePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
       
       {previewState && <FilePreview file={previewState.file} url={previewState.url} content={previewState.content} onClose={() => setPreviewState(null)} onOpenExternal={() => fileSystem.openFile(previewState.file)} />}
       
@@ -619,9 +550,9 @@ const AppContent: React.FC = () => {
         isOpen={!!contextMenu}
         onClose={() => setContextMenu(null)}
         file={contextFile}
-        selectedCount={activePane.selectedIds.size}
+        selectedCount={filePane.selectedIds.size}
         onAction={executeMenuAction}
-        isTrash={activePane.currentPath.some(p => p.id === 'trash')}
+        isTrash={filePane.currentPath.some(p => p.id === 'trash')}
         isBookmarked={contextFile ? fileSystem.isBookmarked(contextFile.id) : false}
       />
     </div>
