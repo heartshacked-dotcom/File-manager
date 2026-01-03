@@ -43,7 +43,7 @@ const AppContent: React.FC = () => {
   // Only initialize panes if permissions are granted/scoped
   const isReady = permStatus === PermissionStatus.GRANTED || permStatus === PermissionStatus.SCOPED;
   
-  const leftPane = useFilePane('root_internal', isReady);
+  const leftPane = useFilePane('root', isReady); // Default to Root screen
   const rightPane = useFilePane('root_sd', isReady);
   const [activePaneId, setActivePaneId] = useState<PaneId>('left');
   const [dualPaneEnabled, setDualPaneEnabled] = useState(false);
@@ -98,6 +98,12 @@ const AppContent: React.FC = () => {
   };
 
   const handleOpen = async (file: FileNode, pane: ReturnType<typeof useFilePane>) => {
+    // Handle Shortcuts
+    if (file.id === 'downloads_shortcut') {
+       pane.navigateTo('downloads');
+       return;
+    }
+
     if (file.type === 'folder') {
       if (file.isProtected && !isAuthenticated) {
         setModal({ type: 'AUTH', targetId: file.id });

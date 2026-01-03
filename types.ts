@@ -8,6 +8,7 @@ export interface FileNode {
   type: FileType;
   size: number; // in bytes
   updatedAt: number; // timestamp
+  capacity?: number; // Total storage capacity (for drives)
   isProtected?: boolean;
   isTrash?: boolean;
   isHidden?: boolean;

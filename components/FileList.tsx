@@ -1,7 +1,8 @@
+
 import React, { useRef } from 'react';
 import { FileNode, ViewMode, SortField } from '../types';
 import { getIconForType } from '../constants';
-import { MoreVertical, CheckCircle2 } from 'lucide-react';
+import { MoreVertical, CheckCircle2, Smartphone, HardDrive, Download, Trash2, Lock, ChevronRight } from 'lucide-react';
 
 const formatDate = (ts: number) => {
   const date = new Date(ts);
@@ -27,6 +28,63 @@ interface FileListProps {
   onDropFile: (sourceId: string, targetFolderId: string) => void;
 }
 
+// Special component for Storage Root items
+const StorageItem: React.FC<{
+  file: FileNode;
+  onOpen: (file: FileNode) => void;
+  onContextMenu: (e: React.MouseEvent, file: FileNode) => void;
+}> = ({ file, onOpen, onContextMenu }) => {
+  let Icon = HardDrive;
+  let colorClass = "text-slate-500";
+  let bgClass = "bg-slate-100 dark:bg-slate-800";
+  
+  if (file.id === 'root_internal') { Icon = Smartphone; colorClass = "text-blue-500"; bgClass = "bg-blue-500/10"; }
+  else if (file.id === 'root_sd') { Icon = HardDrive; colorClass = "text-purple-500"; bgClass = "bg-purple-500/10"; }
+  else if (file.name === 'Downloads') { Icon = Download; colorClass = "text-green-500"; bgClass = "bg-green-500/10"; }
+  else if (file.isTrash) { Icon = Trash2; colorClass = "text-red-500"; bgClass = "bg-red-500/10"; }
+  else if (file.isProtected) { Icon = Lock; colorClass = "text-amber-500"; bgClass = "bg-amber-500/10"; }
+
+  const percentage = file.capacity ? Math.round((file.size / file.capacity) * 100) : 0;
+  const hasUsage = !!file.capacity;
+
+  return (
+    <div 
+      onClick={() => onOpen(file)}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file); }}
+      className="flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-transform cursor-pointer mb-2"
+    >
+      <div className={`p-3.5 rounded-xl ${bgClass} ${colorClass}`}>
+        <Icon size={28} strokeWidth={2} />
+      </div>
+      
+      <div className="flex-1">
+        <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-1">{file.name}</h4>
+        
+        {hasUsage ? (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs text-slate-500 font-medium">
+               <span>{formatSize(file.size)} used</span>
+               <span>{formatSize(file.capacity!)} total</span>
+            </div>
+            <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+               <div 
+                 className={`h-full rounded-full transition-all duration-1000 ${
+                    percentage > 90 ? 'bg-red-500' : (percentage > 70 ? 'bg-amber-500' : 'bg-blue-500')
+                 }`} 
+                 style={{ width: `${percentage}%` }}
+               />
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">{file.type === 'folder' ? 'Folder' : formatSize(file.size)}</p>
+        )}
+      </div>
+      
+      <ChevronRight size={20} className="text-slate-300 dark:text-slate-600" />
+    </div>
+  );
+};
+
 const FileItem: React.FC<{
   file: FileNode;
   viewMode: ViewMode;
@@ -39,6 +97,11 @@ const FileItem: React.FC<{
 }> = ({ file, viewMode, isSelected, onSelect, onOpen, onContextMenu, onDropFile, isSelectionMode }) => {
   const Icon = getIconForType(file.type);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Check if root drive item
+  if (file.parentId === 'root') {
+      return <StorageItem file={file} onOpen={onOpen} onContextMenu={onContextMenu} />
+  }
 
   // --- Drag & Drop ---
   const handleDragStart = (e: React.DragEvent) => {
@@ -202,6 +265,10 @@ const FileList: React.FC<FileListProps> = ({
   onDropFile
 }) => {
   const isSelectionMode = selectedIds.size > 0;
+  
+  // Check if we are displaying the Root storage screen based on content (parentId='root')
+  // We can infer this if the first file has parentId === 'root'
+  const isRootScreen = files.length > 0 && files[0].parentId === 'root';
 
   if (files.length === 0) {
     return (
@@ -212,6 +279,27 @@ const FileList: React.FC<FileListProps> = ({
         <p>No items found</p>
       </div>
     );
+  }
+
+  // If root screen, enforce a List-like column layout regardless of viewMode, or use a custom Grid for drives
+  if (isRootScreen) {
+     return (
+        <div className="flex flex-col gap-2 p-2">
+           {files.map(file => (
+              <FileItem
+                 key={file.id}
+                 file={file}
+                 viewMode={ViewMode.LIST} // Root always looks better as List/Cards
+                 isSelected={false}
+                 onSelect={onSelect}
+                 onOpen={onOpen}
+                 onContextMenu={onContextMenu}
+                 onDropFile={onDropFile}
+                 isSelectionMode={false}
+              />
+           ))}
+        </div>
+     )
   }
 
   return (

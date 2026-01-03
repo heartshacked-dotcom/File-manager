@@ -326,16 +326,56 @@ class AndroidFileSystem {
     if (parentId === 'recent') return this.getRecentFiles();
     if (parentId === 'trash') return this.getTrashFiles();
 
-    // Virtual Root
+    // Virtual Root / Storage Root Screen
     if (!parentId || parentId === 'root') {
-        const roots = [
-            { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: Date.now() },
-            { id: 'recent', parentId: 'root', name: 'Recent Files', type: 'folder', size: 0, updatedAt: Date.now() },
+        const { used, total } = this.getStorageUsage();
+        const roots: FileNode[] = [
+            { 
+              id: 'root_internal', 
+              parentId: 'root', 
+              name: 'Internal Storage', 
+              type: 'folder', 
+              size: used, 
+              capacity: total,
+              updatedAt: Date.now() 
+            },
+            { 
+              id: 'root_sd', 
+              parentId: 'root', 
+              name: 'SD Card', 
+              type: 'folder', 
+              size: 14 * 1024*1024*1024, 
+              capacity: 64 * 1024*1024*1024,
+              updatedAt: Date.now() 
+            },
+            { 
+              id: 'downloads_shortcut', 
+              parentId: 'root', 
+              name: 'Downloads', 
+              type: 'folder', 
+              size: 0, 
+              updatedAt: Date.now() 
+            },
+            { 
+              id: 'trash', 
+              parentId: 'root', 
+              name: 'Recycle Bin', 
+              type: 'folder', 
+              size: 0, 
+              updatedAt: Date.now(),
+              isTrash: true
+            },
+            { 
+              id: 'secure_vault', 
+              parentId: 'root', 
+              name: 'Secure Vault', 
+              type: 'folder', 
+              size: 0, 
+              updatedAt: Date.now(), 
+              isProtected: true 
+            }
         ];
-        // Only show SD if we have full access or scoped access to it?
-        // For simplicity, we show SD card entry but it might fail if not permitted
-        roots.splice(1, 0, { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: Date.now() });
-        return roots as FileNode[];
+        return roots;
     }
 
     let path = '';
@@ -390,6 +430,8 @@ class AndroidFileSystem {
       if (id === 'trash') return { id: 'trash', parentId: 'root', name: 'Recycle Bin', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'recent') return { id: 'recent', parentId: 'root', name: 'Recent Files', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'favorites') return { id: 'favorites', parentId: 'root', name: 'Favorites', type: 'folder', size: 0, updatedAt: 0 };
+      if (id === 'downloads_shortcut') return { id: 'downloads_shortcut', parentId: 'root', name: 'Downloads', type: 'folder', size: 0, updatedAt: 0 };
+      if (id === 'secure_vault') return { id: 'secure_vault', parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: 0 };
 
       const res = await Filesystem.stat({ path: id, directory: Directory.ExternalStorage });
       const name = id.split('/').pop() || id;
@@ -416,7 +458,9 @@ class AndroidFileSystem {
     if (id === 'root') return [];
     if (id === 'root_internal') return [{ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 }];
     if (id === 'root_sd') return [{ id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 }];
-    
+    if (id === 'downloads_shortcut') return [{ id: 'downloads_shortcut', parentId: 'root', name: 'Downloads', type: 'folder', size: 0, updatedAt: 0 }];
+    if (id === 'secure_vault') return [{ id: 'secure_vault', parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: 0 }];
+
     const parts = id.split('/');
     const trail: FileNode[] = [];
     let currentPath = '';
