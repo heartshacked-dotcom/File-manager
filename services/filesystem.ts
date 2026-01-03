@@ -51,7 +51,6 @@ class AndroidFileSystem {
   async openSettings() {
     try {
       // App.openSettings() is not available in standard @capacitor/app.
-      // To implement this, install 'capacitor-native-settings' and use it here.
       console.warn("Opening settings is not supported without additional plugins.");
     } catch (e) {
       console.error("Failed to open settings", e);
@@ -252,15 +251,35 @@ class AndroidFileSystem {
        if (id === destPath) continue;
 
        try {
-         // Try standard rename (fast move)
+         // Attempt 1: Fast Rename
          await Filesystem.rename({
            from: id,
            to: destPath,
            directory: Directory.ExternalStorage
          });
        } catch (err) {
-          console.warn(`[Nova] Fast move failed for ${id}. Attempting copy/delete fallback.`);
+          console.warn(`[Nova] Fast move failed for ${id}. Attempting recovery...`);
           
+          // Attempt 2: Ensure destination directory exists, then retry rename
+          // This fixes cases where 'rename' fails simply because the parent folder is missing
+          if (targetPath) {
+             try {
+               await Filesystem.mkdir({
+                 path: targetPath,
+                 directory: Directory.ExternalStorage,
+                 recursive: true
+               });
+               await Filesystem.rename({
+                 from: id,
+                 to: destPath,
+                 directory: Directory.ExternalStorage
+               });
+               continue; // Success, skip fallback
+             } catch (retryErr) {
+               // Continue to fallback
+             }
+          }
+
           // Fallback: Copy then Delete (Robust Move)
           try {
              await Filesystem.copy({
@@ -269,10 +288,18 @@ class AndroidFileSystem {
                directory: Directory.ExternalStorage
              });
              
-             await Filesystem.deleteFile({
-               path: id,
-               directory: Directory.ExternalStorage
-             });
+             // Try to delete the original
+             try {
+                await Filesystem.deleteFile({
+                  path: id,
+                  directory: Directory.ExternalStorage
+                });
+             } catch (deleteErr: any) {
+                // Critical: If delete fails (common with special chars like #), 
+                // we consume the error because the file WAS copied. 
+                // We leave a duplicate rather than crashing the app flow.
+                console.error("[Nova] Warning: Failed to delete original file after copy. Duplicate remains.", deleteErr.message);
+             }
           } catch (fallbackErr: any) {
              console.error("[Nova] Move fallback failed", fallbackErr);
              throw new Error(`Failed to move ${name}. ${fallbackErr.message || 'Access denied or file exists.'}`);
