@@ -29,6 +29,13 @@ export enum SortField {
   TYPE = 'TYPE',
 }
 
+export enum SortDirection {
+  ASC = 'ASC',
+  DESC = 'DESC',
+}
+
+export type DateFilter = 'ALL' | 'TODAY' | 'WEEK' | 'MONTH';
+
 export interface ClipboardState {
   mode: 'copy' | 'cut';
   sourceIds: string[];

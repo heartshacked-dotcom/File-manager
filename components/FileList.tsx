@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { FileNode, ViewMode, SortField } from '../types';
 import { getIconForType } from '../constants';
 import { MoreVertical, CheckCircle2 } from 'lucide-react';
@@ -17,7 +17,7 @@ const formatSize = (bytes: number) => {
 };
 
 interface FileListProps {
-  files: FileNode[];
+  files: FileNode[]; // Files are assumed to be pre-sorted and filtered
   viewMode: ViewMode;
   selectedIds: Set<string>;
   onSelect: (id: string, multi: boolean) => void;
@@ -33,27 +33,9 @@ const FileList: React.FC<FileListProps> = ({
   selectedIds, 
   onSelect, 
   onOpen,
-  sortField,
   onContextMenu,
   onDropFile
 }) => {
-
-  const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
-      // Folders always first
-      if (a.type === 'folder' && b.type !== 'folder') return -1;
-      if (a.type !== 'folder' && b.type === 'folder') return 1;
-
-      switch (sortField) {
-        case SortField.SIZE: return b.size - a.size;
-        case SortField.DATE: return b.updatedAt - a.updatedAt;
-        case SortField.TYPE: return a.type.localeCompare(b.type);
-        case SortField.NAME: 
-        default:
-          return a.name.localeCompare(b.name);
-      }
-    });
-  }, [files, sortField]);
 
   // --- Drag and Drop Handlers ---
   const handleDragStart = (e: React.DragEvent, file: FileNode) => {
@@ -98,13 +80,13 @@ const FileList: React.FC<FileListProps> = ({
     }
   };
 
-  if (sortedFiles.length === 0) {
+  if (files.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-slate-500">
         <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
            <span className="text-2xl">📂</span>
         </div>
-        <p>This folder is empty</p>
+        <p>No items found</p>
       </div>
     );
   }
@@ -112,7 +94,7 @@ const FileList: React.FC<FileListProps> = ({
   if (viewMode === ViewMode.GRID) {
     return (
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 p-2 pb-24">
-        {sortedFiles.map(file => {
+        {files.map(file => {
           const Icon = getIconForType(file.type);
           const isSelected = selectedIds.has(file.id);
           return (
@@ -158,7 +140,7 @@ const FileList: React.FC<FileListProps> = ({
 
   return (
     <div className="flex flex-col pb-24">
-      {sortedFiles.map(file => {
+      {files.map(file => {
         const Icon = getIconForType(file.type);
         const isSelected = selectedIds.has(file.id);
 

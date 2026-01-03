@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  FileNode, ViewMode, SortField, ClipboardState, ModalState, ModalType
+  FileNode, ViewMode, SortField, SortDirection, DateFilter, 
+  ClipboardState, ModalState, ModalType, FileType
 } from './types';
 import { fileSystem } from './services/filesystem';
 import FileList from './components/FileList';
@@ -8,11 +9,12 @@ import Breadcrumbs from './components/Breadcrumbs';
 import StorageChart from './components/StorageChart';
 import ContextMenu from './components/ContextMenu';
 import FilePreview from './components/FilePreview';
+import SortFilterControl from './components/SortFilterControl';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Search, Grid, List, Plus, Trash2, Copy, Scissors, 
-  CornerUpLeft, Settings, Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
-  Home, Download, Music, Video, Image, FileText, HardDrive, RefreshCw
+  Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
+  Download, Music, Video, Image, FileText, HardDrive, RefreshCw, Filter
 } from 'lucide-react';
 
 interface PreviewState {
@@ -27,8 +29,14 @@ const App: React.FC = () => {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.GRID);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  // Sorting & Filtering State
   const [sortField, setSortField] = useState<SortField>(SortField.NAME);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(SortDirection.ASC);
+  const [filterType, setFilterType] = useState<FileType | 'all'>('all');
+  const [filterDate, setFilterDate] = useState<DateFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   
   // Advanced State
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
@@ -55,10 +63,6 @@ const App: React.FC = () => {
     try {
       const parentId = isTrashView ? 'trash' : (currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
       let fetchedFiles = await fileSystem.readdir(parentId, showHidden);
-      if (searchQuery) {
-        // Simple client side filter if search not fully supported
-        fetchedFiles = fetchedFiles.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
-      }
       setFiles(fetchedFiles);
       
       const stats = fileSystem.getStorageUsage();
@@ -66,12 +70,68 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to load files", error);
     }
-  }, [currentPath, searchQuery, showHidden, isTrashView]);
+  }, [currentPath, showHidden, isTrashView]);
 
   useEffect(() => {
     refreshFiles();
     setSelectedIds(new Set());
   }, [refreshFiles]);
+
+  // --- Filtering & Sorting Pipeline ---
+  const displayedFiles = useMemo(() => {
+    let result = [...files];
+
+    // 1. Search Query
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(f => f.name.toLowerCase().includes(q));
+    }
+
+    // 2. Filter by Type
+    if (filterType !== 'all') {
+      result = result.filter(f => f.type === filterType);
+    }
+
+    // 3. Filter by Date
+    if (filterDate !== 'ALL') {
+       const now = Date.now();
+       const oneDay = 24 * 60 * 60 * 1000;
+       result = result.filter(f => {
+         const diff = now - f.updatedAt;
+         if (filterDate === 'TODAY') return diff < oneDay;
+         if (filterDate === 'WEEK') return diff < oneDay * 7;
+         if (filterDate === 'MONTH') return diff < oneDay * 30;
+         return true;
+       });
+    }
+
+    // 4. Sorting
+    result.sort((a, b) => {
+      // Always keep folders on top
+      if (a.type === 'folder' && b.type !== 'folder') return -1;
+      if (a.type !== 'folder' && b.type === 'folder') return 1;
+
+      let comparison = 0;
+      switch (sortField) {
+        case SortField.SIZE: 
+          comparison = a.size - b.size; 
+          break;
+        case SortField.DATE: 
+          comparison = a.updatedAt - b.updatedAt; 
+          break;
+        case SortField.TYPE: 
+          comparison = a.type.localeCompare(b.type); 
+          break;
+        case SortField.NAME: 
+        default:
+          comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+          break;
+      }
+      return sortDirection === SortDirection.ASC ? comparison : -comparison;
+    });
+
+    return result;
+  }, [files, searchQuery, filterType, filterDate, sortField, sortDirection]);
 
   // --- Actions ---
 
@@ -258,16 +318,16 @@ const App: React.FC = () => {
            </button>
 
            <div className="text-xs font-semibold text-slate-500 uppercase px-4 mt-6 mb-2">Collections</div>
-           <button className="flex items-center w-full px-4 py-2 text-sm rounded-lg text-slate-400 hover:bg-slate-800">
+           <button onClick={() => setFilterType('image')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'image' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
              <Image className="mr-3 text-amber-500" size={18} /> Images
            </button>
-           <button className="flex items-center w-full px-4 py-2 text-sm rounded-lg text-slate-400 hover:bg-slate-800">
+           <button onClick={() => setFilterType('video')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'video' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
              <Video className="mr-3 text-red-500" size={18} /> Videos
            </button>
-           <button className="flex items-center w-full px-4 py-2 text-sm rounded-lg text-slate-400 hover:bg-slate-800">
+           <button onClick={() => setFilterType('audio')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'audio' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
              <Music className="mr-3 text-purple-500" size={18} /> Audio
            </button>
-           <button className="flex items-center w-full px-4 py-2 text-sm rounded-lg text-slate-400 hover:bg-slate-800">
+           <button onClick={() => setFilterType('document')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'document' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
              <FileText className="mr-3 text-blue-500" size={18} /> Documents
            </button>
            <button className="flex items-center w-full px-4 py-2 text-sm rounded-lg text-slate-400 hover:bg-slate-800">
@@ -320,6 +380,13 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            <button 
+               onClick={() => setShowFilterPanel(!showFilterPanel)} 
+               className={`p-2 rounded-lg transition-colors ${showFilterPanel ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}
+            >
+               <Filter size={20} />
+            </button>
+            
             <button onClick={() => setShowHidden(!showHidden)} className={`p-2 rounded-lg transition-colors hidden sm:block ${showHidden ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}>
                <Eye size={20} />
             </button>
@@ -340,6 +407,17 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        {/* Sort/Filter Panel */}
+        {showFilterPanel && (
+          <SortFilterControl 
+            sortField={sortField} setSortField={setSortField}
+            sortDirection={sortDirection} setSortDirection={setSortDirection}
+            filterType={filterType} setFilterType={setFilterType}
+            filterDate={filterDate} setFilterDate={setFilterDate}
+            onClose={() => setShowFilterPanel(false)}
+          />
+        )}
+
         {/* Views */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 md:p-4 scroll-smooth">
            {showStorage ? (
@@ -356,13 +434,13 @@ const App: React.FC = () => {
                   <button onClick={handleEmptyTrash} className="px-4 py-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 text-sm font-medium">Empty Bin</button>
                 </div>
                 <FileList 
-                  files={files} viewMode={viewMode} selectedIds={selectedIds} onSelect={handleSelect}
+                  files={displayedFiles} viewMode={viewMode} selectedIds={selectedIds} onSelect={handleSelect}
                   onOpen={() => {}} sortField={sortField} onContextMenu={handleContextMenu} onDropFile={() => {}}
                 />
               </div>
            ) : (
              <FileList 
-               files={files}
+               files={displayedFiles}
                viewMode={viewMode}
                selectedIds={selectedIds}
                onSelect={handleSelect}
