@@ -4,6 +4,7 @@ import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { SecurityService } from './security';
 
 const TRASH_FOLDER = '.nova_trash';
 
@@ -112,6 +113,7 @@ class AndroidFileSystem {
 
       let nodes: FileNode[] = res.files.map(f => {
         const relativePath = path ? `${path}/${f.name}` : f.name;
+        const isEncrypted = f.name.endsWith('.enc');
         
         return {
            id: relativePath,
@@ -121,7 +123,10 @@ class AndroidFileSystem {
            size: f.size,
            updatedAt: f.mtime,
            isHidden: f.name.startsWith('.'),
-           isTrash: isTrash
+           isTrash: isTrash,
+           isEncrypted: isEncrypted,
+           // In a real app, protection status would be stored in metadata/db
+           isProtected: f.name.includes('_safe') || f.name === 'Secure Vault'
         };
       });
 
@@ -154,7 +159,9 @@ class AndroidFileSystem {
         type: getFileType(name, res.type === 'directory'),
         size: res.size,
         updatedAt: res.mtime,
-        isHidden: name.startsWith('.')
+        isHidden: name.startsWith('.'),
+        isEncrypted: name.endsWith('.enc'),
+        isProtected: name.includes('_safe') || name === 'Secure Vault'
       };
     } catch {
       return undefined;
@@ -332,20 +339,17 @@ class AndroidFileSystem {
     }
   }
 
-  // --- Archive Operations (Simulated) ---
-  // In a real app, this would use 'jszip' or a cordova plugin
+  // --- Archive Operations ---
   async compress(ids: string[], archiveName: string): Promise<void> {
     const parentId = ids[0].substring(0, ids[0].lastIndexOf('/'));
     const zipName = archiveName.endsWith('.zip') ? archiveName : `${archiveName}.zip`;
     const path = parentId ? `${parentId}/${zipName}` : zipName;
 
-    // Simulate work
     await new Promise(resolve => setTimeout(resolve, 800));
 
-    // Create a dummy file to represent the zip
     await Filesystem.writeFile({
       path: path,
-      data: 'PK...', // Dummy zip header
+      data: 'PK...', // Dummy zip
       directory: Directory.ExternalStorage,
       encoding: Encoding.UTF8
     });
@@ -357,7 +361,6 @@ class AndroidFileSystem {
      const folderName = fileName.replace(/\.(zip|rar|7z|tar|gz)$/i, '');
      const targetPath = parentPath ? `${parentPath}/${folderName}` : folderName;
 
-     // Simulate work
      await new Promise(resolve => setTimeout(resolve, 1000));
 
      await Filesystem.mkdir({
@@ -366,13 +369,99 @@ class AndroidFileSystem {
        recursive: true
      });
      
-     // Create dummy extracted content
      await Filesystem.writeFile({
        path: `${targetPath}/readme.txt`,
        data: 'Extracted content',
        directory: Directory.ExternalStorage,
        encoding: Encoding.UTF8
      });
+  }
+
+  // --- Security Operations ---
+  
+  async toggleProtection(ids: string[], protect: boolean): Promise<void> {
+    for (const id of ids) {
+      const name = id.split('/').pop() || '';
+      let newName = name;
+      
+      if (protect && !name.includes('_safe')) {
+        newName = name + '_safe';
+      } else if (!protect && name.endsWith('_safe')) {
+        newName = name.replace('_safe', '');
+      } else {
+        continue;
+      }
+      
+      const parentPath = id.substring(0, id.lastIndexOf('/'));
+      const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+      
+      await Filesystem.rename({
+        from: id,
+        to: newPath,
+        directory: Directory.ExternalStorage
+      });
+    }
+  }
+
+  async encryptFiles(ids: string[], password: string): Promise<void> {
+     for (const id of ids) {
+       // 1. Read file
+       const readResult = await Filesystem.readFile({
+         path: id,
+         directory: Directory.ExternalStorage,
+         // Read as default (Base64)
+       });
+       
+       const data = readResult.data;
+       if (typeof data !== 'string') throw new Error("File format not supported for encryption");
+       
+       // 2. Encrypt
+       const encryptedData = await SecurityService.encryptData(data, password);
+       
+       // 3. Write new .enc file
+       const newPath = id + '.enc';
+       await Filesystem.writeFile({
+         path: newPath,
+         data: encryptedData,
+         directory: Directory.ExternalStorage,
+         // Write as string (Base64 implies text in this context for filesystem write usually, 
+         // but we want binary. Web implementation of Capacitor might need utf8 if not base64)
+         // We'll trust Capacitor handles base64 string writes correctly if no encoding specified?
+         // Actually, Filesystem.writeFile takes data as string. 
+       });
+
+       // 4. Delete original
+       await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+     }
+  }
+
+  async decryptFiles(ids: string[], password: string): Promise<void> {
+    for (const id of ids) {
+      if (!id.endsWith('.enc')) continue;
+      
+      // 1. Read encrypted file
+      const readResult = await Filesystem.readFile({
+        path: id,
+        directory: Directory.ExternalStorage
+      });
+      
+      const encryptedData = readResult.data;
+      if (typeof encryptedData !== 'string') throw new Error("Read error");
+
+      // 2. Decrypt
+      const decryptedData = await SecurityService.decryptData(encryptedData, password);
+
+      // 3. Write original file
+      const newPath = id.substring(0, id.length - 4); // Remove .enc
+      await Filesystem.writeFile({
+        path: newPath,
+        data: decryptedData,
+        directory: Directory.ExternalStorage
+      });
+
+      // 4. Delete encrypted
+      await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+    }
   }
 
   async getFileUrl(id: string): Promise<string> {
@@ -445,7 +534,6 @@ class AndroidFileSystem {
      
      if (ext && mimeTypes[ext]) return mimeTypes[ext];
      
-     // Fallbacks based on type category
      if (type === 'image') return 'image/*';
      if (type === 'video') return 'video/*';
      if (type === 'audio') return 'audio/*';

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { 
   Copy, Scissors, Trash2, Edit2, Info, Share2, 
   ExternalLink, EyeOff, FolderOpen, CopyPlus,
-  Archive, Expand, Star
+  Archive, Expand, Star, Lock, Unlock, Shield
 } from 'lucide-react';
 
 interface ContextMenuProps {
@@ -14,9 +14,15 @@ interface ContextMenuProps {
   isFolder?: boolean;
   fileType?: string;
   isBookmarked?: boolean;
+  isProtected?: boolean;
+  isEncrypted?: boolean;
 }
 
-const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, singleFile, isFolder, fileType, isBookmarked }) => {
+const ContextMenu: React.FC<ContextMenuProps> = ({ 
+  x, y, onClose, onAction, 
+  singleFile, isFolder, fileType, 
+  isBookmarked, isProtected, isEncrypted 
+}) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +37,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, sing
 
   // Adjust position to not overflow screen
   const adjustedX = Math.min(x, window.innerWidth - 220);
-  const adjustedY = Math.min(y, window.innerHeight - 450);
+  const adjustedY = Math.min(y, window.innerHeight - 500);
 
   const isArchive = fileType === 'archive' || (singleFile && ['zip', 'rar', '7z', 'tar', 'gz'].some(ext => fileType?.includes(ext)));
 
@@ -46,12 +52,31 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, sing
           <button onClick={() => onAction('open')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
             <FolderOpen size={16} /> Open
           </button>
+          
+          <button onClick={() => onAction('lock')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+            {isProtected ? (
+              <><Unlock size={16} className="text-green-400" /> Unlock Folder</>
+            ) : (
+              <><Lock size={16} className="text-amber-400" /> Lock Folder</>
+            )}
+          </button>
+
           <button onClick={() => onAction('bookmark')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
             <Star size={16} className={isBookmarked ? "fill-amber-400 text-amber-400" : ""} /> 
             {isBookmarked ? "Remove Favorite" : "Add to Favorites"}
           </button>
           <div className="h-px bg-slate-700 my-1"></div>
         </>
+      )}
+
+      {singleFile && !isFolder && (
+        <button onClick={() => onAction('encrypt')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+           {isEncrypted ? (
+             <><Unlock size={16} className="text-green-400" /> Decrypt File</>
+           ) : (
+             <><Shield size={16} className="text-blue-400" /> Encrypt (AES)</>
+           )}
+        </button>
       )}
 
       {/* Archive Operations */}

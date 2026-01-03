@@ -11,6 +11,7 @@ export interface FileNode {
   isProtected?: boolean;
   isTrash?: boolean;
   isHidden?: boolean;
+  isEncrypted?: boolean;
 }
 
 export interface BreadcrumbItem {
@@ -45,7 +46,7 @@ export interface ClipboardState {
   sourceParentId: string | null;
 }
 
-export type ModalType = 'RENAME' | 'CREATE_FOLDER' | 'PROPERTIES' | 'DELETE_CONFIRM' | 'COMPRESS' | null;
+export type ModalType = 'RENAME' | 'CREATE_FOLDER' | 'PROPERTIES' | 'DELETE_CONFIRM' | 'COMPRESS' | 'AUTH' | 'SETTINGS' | 'ENCRYPT' | 'DECRYPT' | null;
 
 export interface ModalState {
   type: ModalType;

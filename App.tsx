@@ -4,6 +4,7 @@ import {
   ClipboardState, ModalState, FileType, SizeFilter
 } from './types';
 import { fileSystem } from './services/filesystem';
+import { SecurityService } from './services/security';
 import FileList from './components/FileList';
 import Breadcrumbs from './components/Breadcrumbs';
 import StorageChart from './components/StorageChart';
@@ -11,12 +12,14 @@ import ContextMenu from './components/ContextMenu';
 import FilePreview from './components/FilePreview';
 import FolderTree from './components/FolderTree';
 import SortFilterControl from './components/SortFilterControl';
+import AuthDialog from './components/AuthDialog';
+import SettingsDialog from './components/SettingsDialog';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Search, Grid, List, Plus, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
   Download, Music, Video, Image, FileText, RefreshCw, Filter, Settings,
-  ChevronLeft, ChevronRight, Home, Star, Archive
+  ChevronLeft, ChevronRight, Home, Star, Archive, Lock
 } from 'lucide-react';
 
 interface PreviewState {
@@ -29,7 +32,6 @@ const App: React.FC = () => {
   // --- Navigation & History State ---
   const [historyStack, setHistoryStack] = useState<FileNode[][]>([[]]);
   const [historyIndex, setHistoryIndex] = useState(0);
-  
   const currentPath = historyStack[historyIndex] || [];
   
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -37,8 +39,10 @@ const App: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastFocusedId, setLastFocusedId] = useState<string | null>(null);
   
-  // Permission State
+  // Permission & Security State
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [vaultPinHash, setVaultPinHash] = useState<string | null>(localStorage.getItem('nova_vault_pin'));
   
   // Sorting & Filtering State
   const [sortField, setSortField] = useState<SortField>(SortField.NAME);
@@ -52,6 +56,7 @@ const App: React.FC = () => {
   // Advanced State
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [showProtected, setShowProtected] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string } | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
@@ -80,10 +85,13 @@ const App: React.FC = () => {
     };
     checkPermissions();
 
-    // Load bookmarks
     const saved = localStorage.getItem('nova_bookmarks');
     if (saved) {
-      setBookmarks(new Set(JSON.parse(saved) as string[]));
+      try {
+        setBookmarks(new Set(JSON.parse(saved) as any as string[]));
+      } catch (e) {
+        console.error("Failed to load bookmarks", e);
+      }
     }
   }, []);
 
@@ -106,6 +114,12 @@ const App: React.FC = () => {
     try {
       const parentId = isTrashView ? 'trash' : (currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root');
       let fetchedFiles = await fileSystem.readdir(parentId, showHidden);
+      
+      // Filter protected files if secure mode is off
+      if (!showProtected) {
+        fetchedFiles = fetchedFiles.filter(f => !f.isProtected);
+      }
+
       setFiles(fetchedFiles);
       
       const stats = fileSystem.getStorageUsage();
@@ -113,7 +127,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to load files", error);
     }
-  }, [currentPath, showHidden, isTrashView]);
+  }, [currentPath, showHidden, showProtected, isTrashView]);
 
   useEffect(() => {
     if (permissionGranted) {
@@ -150,7 +164,7 @@ const App: React.FC = () => {
 
     if (filterSize !== 'ALL') {
       result = result.filter(f => {
-        if (f.type === 'folder') return false; // Hide folders when filtering size usually? Or keep them? Solid explorer keeps them but sortable. Let's strict filter files.
+        if (f.type === 'folder') return false; 
         const mb = f.size / (1024 * 1024);
         if (filterSize === 'SMALL') return mb < 1;
         if (filterSize === 'MEDIUM') return mb >= 1 && mb < 100;
@@ -226,13 +240,19 @@ const App: React.FC = () => {
 
   const handleOpen = async (file: FileNode) => {
     if (file.type === 'folder') {
-      if (file.isProtected) {
-        const pass = prompt("Enter Vault Password:");
-        if (pass !== '1234') return;
+      if (file.isProtected && !isAuthenticated) {
+        // Trigger Auth Flow
+        setModal({ type: 'AUTH', targetId: file.id });
+        return;
       }
       navigateTo(file.id);
     } else {
       try {
+        if (file.isEncrypted) {
+           setModal({ type: 'DECRYPT', targetId: file.id });
+           return;
+        }
+
         if (file.type === 'archive' || file.name.endsWith('.zip')) {
            if (confirm("Extract this archive?")) {
               setIsProcessing(true);
@@ -285,11 +305,78 @@ const App: React.FC = () => {
     }
   };
 
+  // --- Security Logic ---
+  const handleAuthSuccess = (pin: string) => {
+    if (!vaultPinHash) {
+      // First time setup
+      SecurityService.hashPin(pin).then(hash => {
+        localStorage.setItem('nova_vault_pin', hash);
+        setVaultPinHash(hash);
+        setIsAuthenticated(true);
+        setModal({ type: null });
+        if (modal.targetId) navigateTo(modal.targetId);
+      });
+    } else {
+      // Verification
+      SecurityService.verifyPin(pin, vaultPinHash).then(isValid => {
+        if (isValid) {
+          setIsAuthenticated(true);
+          setModal({ type: null });
+          if (modal.targetId && files.find(f => f.id === modal.targetId)?.type === 'folder') {
+             navigateTo(modal.targetId);
+          }
+        } else {
+          alert('Incorrect PIN');
+        }
+      });
+    }
+  };
+
+  const handleEncryption = async (password: string) => {
+    const id = modal.targetId || Array.from(selectedIds)[0];
+    if (!id) return;
+    setIsProcessing(true);
+    try {
+      if (modal.type === 'ENCRYPT') {
+        await fileSystem.encryptFiles([id], password);
+      } else {
+        await fileSystem.decryptFiles([id], password);
+      }
+      refreshFiles();
+      setModal({ type: null });
+    } catch (e: any) {
+      alert("Operation failed: " + e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleToggleLock = async () => {
+    const id = contextMenu?.fileId;
+    if (!id) return;
+    
+    // Check auth first if protecting
+    if (!isAuthenticated && !files.find(f=>f.id===id)?.isProtected) {
+      if (!vaultPinHash) {
+         setModal({ type: 'AUTH' }); // Setup PIN first
+         return;
+      }
+    }
+
+    const node = files.find(f => f.id === id);
+    if (!node) return;
+
+    try {
+      await fileSystem.toggleProtection([id], !node.isProtected);
+      refreshFiles();
+      setContextMenu(null);
+    } catch (e) { console.error(e); }
+  };
+
   // --- Selection Logic ---
   const handleSelect = (id: string, multi: boolean, range: boolean) => {
     if (range && lastFocusedId) {
-      // Range selection logic
-      const sortedFiles = displayedFiles; // Use currently visible sort order
+      const sortedFiles = displayedFiles; 
       const startIdx = sortedFiles.findIndex(f => f.id === lastFocusedId);
       const endIdx = sortedFiles.findIndex(f => f.id === id);
 
@@ -297,7 +384,6 @@ const App: React.FC = () => {
          const min = Math.min(startIdx, endIdx);
          const max = Math.max(startIdx, endIdx);
          const rangeIds = sortedFiles.slice(min, max + 1).map(f => f.id);
-         
          setSelectedIds(prev => {
             const next = new Set(prev);
             rangeIds.forEach(rid => next.add(rid));
@@ -305,7 +391,6 @@ const App: React.FC = () => {
          });
       }
     } else if (multi) {
-       // Toggle selection
        setSelectedIds(prev => {
          const next = new Set(prev);
          if (next.has(id)) next.delete(id);
@@ -314,14 +399,12 @@ const App: React.FC = () => {
        });
        setLastFocusedId(id);
     } else {
-       // Single select
        setSelectedIds(new Set([id]));
        setLastFocusedId(id);
     }
   };
 
   // --- Operations ---
-
   const handleCreateFolder = async (name: string) => {
     try {
       if (!name || name.trim() === '') return;
@@ -482,6 +565,8 @@ const App: React.FC = () => {
       case 'bookmark': handleToggleBookmark(); break;
       case 'compress': setModal({ type: 'COMPRESS', targetId }); break;
       case 'extract': handleExtract(); break;
+      case 'lock': handleToggleLock(); break;
+      case 'encrypt': setModal({ type: 'ENCRYPT', targetId }); break;
     }
     setContextMenu(null);
   };
@@ -557,6 +642,9 @@ const App: React.FC = () => {
              </button>
              <button onClick={() => { navigateTo('trash'); setSidebarOpen(false); }} className={`flex items-center w-full px-4 py-2 text-sm font-medium rounded-lg transition-all ${isTrashView ? 'bg-red-500/10 text-red-400' : 'text-slate-400 hover:bg-slate-800'}`}>
                 <Trash2 className="mr-3" size={18} /> Recycle Bin
+             </button>
+             <button onClick={() => setModal({ type: 'SETTINGS' })} className="flex items-center w-full px-4 py-2 text-sm font-medium rounded-lg transition-all text-slate-400 hover:bg-slate-800">
+                <Settings className="mr-3" size={18} /> Settings
              </button>
           </div>
           <div className="p-4 border-t border-slate-800 bg-slate-900/50">
@@ -701,11 +789,39 @@ const App: React.FC = () => {
           isFolder={files.find(f => f.id === contextMenu.fileId)?.type === 'folder'} 
           fileType={files.find(f => f.id === contextMenu.fileId)?.type}
           isBookmarked={contextMenu.fileId ? bookmarks.has(contextMenu.fileId) : false}
+          isProtected={files.find(f => f.id === contextMenu.fileId)?.isProtected}
+          isEncrypted={files.find(f => f.id === contextMenu.fileId)?.isEncrypted}
         />
       )}
+      <AuthDialog 
+         isOpen={modal.type === 'AUTH'} 
+         mode={vaultPinHash ? 'ENTER' : 'CREATE'} 
+         onSuccess={handleAuthSuccess} 
+         onClose={() => setModal({ type: null })} 
+      />
+      <SettingsDialog 
+        isOpen={modal.type === 'SETTINGS'} 
+        onClose={() => setModal({ type: null })}
+        showHidden={showHidden}
+        onToggleHidden={setShowHidden}
+        showProtected={showProtected}
+        onToggleProtected={setShowProtected}
+        onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }}
+      />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Folder Name" actionLabel="Create" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename Item" defaultValue={files.find(f => f.id === modal.targetId)?.name} actionLabel="Rename" onClose={() => setModal({ type: null })} onSubmit={handleRename} />
       <InputDialog isOpen={modal.type === 'COMPRESS'} title="Archive Name" placeholder="archive.zip" actionLabel="Compress" onClose={() => setModal({ type: null })} onSubmit={handleCompress} />
+      
+      {/* Encryption Dialogs reused InputDialog for simplicity or create custom */}
+      <InputDialog 
+        isOpen={modal.type === 'ENCRYPT' || modal.type === 'DECRYPT'} 
+        title={modal.type === 'ENCRYPT' ? "Encrypt File (AES)" : "Decrypt File"}
+        placeholder="Enter Password" 
+        actionLabel={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"}
+        onClose={() => setModal({ type: null })} 
+        onSubmit={handleEncryption} 
+      />
+
       <PropertiesDialog isOpen={modal.type === 'PROPERTIES'} onClose={() => setModal({ type: null })} file={files.find(f => f.id === modal.targetId)} />
     </div>
   );
