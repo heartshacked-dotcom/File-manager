@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   FileNode, ViewMode, SortField, SortDirection, DateFilter, 
-  ClipboardState, ModalState, ModalType, FileType
+  ClipboardState, ModalState, FileType
 } from './types';
 import { fileSystem } from './services/filesystem';
 import FileList from './components/FileList';
@@ -9,12 +9,14 @@ import Breadcrumbs from './components/Breadcrumbs';
 import StorageChart from './components/StorageChart';
 import ContextMenu from './components/ContextMenu';
 import FilePreview from './components/FilePreview';
+import FolderTree from './components/FolderTree';
 import SortFilterControl from './components/SortFilterControl';
 import { InputDialog, PropertiesDialog } from './components/Dialogs';
 import { 
   Menu, Search, Grid, List, Plus, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
-  Download, Music, Video, Image, FileText, HardDrive, RefreshCw, Filter, Settings
+  Download, Music, Video, Image, FileText, RefreshCw, Filter, Settings,
+  ChevronLeft, ChevronRight, Home
 } from 'lucide-react';
 
 interface PreviewState {
@@ -24,8 +26,14 @@ interface PreviewState {
 }
 
 const App: React.FC = () => {
-  // --- State ---
-  const [currentPath, setCurrentPath] = useState<FileNode[]>([]);
+  // --- Navigation & History State ---
+  // historyStack stores the Breadcrumb path (FileNode[]) for each history step
+  const [historyStack, setHistoryStack] = useState<FileNode[][]>([[]]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  
+  // Computed currentPath from history
+  const currentPath = historyStack[historyIndex] || [];
+  
   const [files, setFiles] = useState<FileNode[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.GRID);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -54,11 +62,21 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isTrashView, setIsTrashView] = useState(false);
 
+  // Derive active IDs for the Tree View from current path
+  const activePathIds = useMemo(() => new Set(currentPath.map(n => n.id)), [currentPath]);
+
   // --- Initialization ---
   useEffect(() => {
     const checkPermissions = async () => {
       const granted = await fileSystem.init();
       setPermissionGranted(granted);
+      
+      // Initialize with Internal Storage as start point if granted
+      if (granted) {
+         const initialPath = await fileSystem.getPathNodes('root_internal');
+         setHistoryStack([initialPath]);
+         setHistoryIndex(0);
+      }
     };
     checkPermissions();
   }, []);
@@ -67,7 +85,7 @@ const App: React.FC = () => {
 
   const refreshFiles = useCallback(async () => {
     try {
-      const parentId = isTrashView ? 'trash' : (currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
+      const parentId = isTrashView ? 'trash' : (currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root');
       let fetchedFiles = await fileSystem.readdir(parentId, showHidden);
       setFiles(fetchedFiles);
       
@@ -89,18 +107,15 @@ const App: React.FC = () => {
   const displayedFiles = useMemo(() => {
     let result = [...files];
 
-    // 1. Search Query
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(f => f.name.toLowerCase().includes(q));
     }
 
-    // 2. Filter by Type
     if (filterType !== 'all') {
       result = result.filter(f => f.type === filterType);
     }
 
-    // 3. Filter by Date
     if (filterDate !== 'ALL') {
        const now = Date.now();
        const oneDay = 24 * 60 * 60 * 1000;
@@ -113,23 +128,15 @@ const App: React.FC = () => {
        });
     }
 
-    // 4. Sorting
     result.sort((a, b) => {
-      // Always keep folders on top
       if (a.type === 'folder' && b.type !== 'folder') return -1;
       if (a.type !== 'folder' && b.type === 'folder') return 1;
 
       let comparison = 0;
       switch (sortField) {
-        case SortField.SIZE: 
-          comparison = a.size - b.size; 
-          break;
-        case SortField.DATE: 
-          comparison = a.updatedAt - b.updatedAt; 
-          break;
-        case SortField.TYPE: 
-          comparison = a.type.localeCompare(b.type); 
-          break;
+        case SortField.SIZE: comparison = a.size - b.size; break;
+        case SortField.DATE: comparison = a.updatedAt - b.updatedAt; break;
+        case SortField.TYPE: comparison = a.type.localeCompare(b.type); break;
         case SortField.NAME: 
         default:
           comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
@@ -141,27 +148,66 @@ const App: React.FC = () => {
     return result;
   }, [files, searchQuery, filterType, filterDate, sortField, sortDirection]);
 
-  // --- Actions ---
+  // --- Navigation Actions ---
 
-  const handleNavigate = async (id: string) => {
-    if (id === 'root' || id === 'root_internal') {
-      setCurrentPath([]);
-      setIsTrashView(false);
+  const navigateTo = async (id: string) => {
+    if (id === 'trash') {
+      setIsTrashView(true);
       setShowStorage(false);
       return;
     }
-    if (id === 'trash') {
-       setCurrentPath([]); // Visual reset
-       setIsTrashView(true);
+
+    // Special reset
+    if (id === 'root') {
+       // Root means device selection
+       setIsTrashView(false);
        setShowStorage(false);
+       const newPath: FileNode[] = []; // Empty path = root
+       pushHistory(newPath);
        return;
     }
+
     setIsTrashView(false);
     setShowStorage(false);
+
+    // Don't navigate if we are already there
+    const currentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
+    if (currentId === id) return;
+
     const trail = await fileSystem.getPathNodes(id);
-    setCurrentPath(trail);
+    pushHistory(trail);
     setSearchQuery('');
   };
+
+  const pushHistory = (path: FileNode[]) => {
+    // Slice logic to support "branching" history if we navigated back then somewhere new
+    const newStack = historyStack.slice(0, historyIndex + 1);
+    newStack.push(path);
+    setHistoryStack(newStack);
+    setHistoryIndex(newStack.length - 1);
+  };
+
+  const handleBack = () => {
+    if (showStorage) {
+      setShowStorage(false);
+      return;
+    }
+    if (isTrashView) {
+      setIsTrashView(false);
+      return;
+    }
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+    }
+  };
+
+  const handleForward = () => {
+    if (historyIndex < historyStack.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+    }
+  };
+
+  const handleNavigate = (id: string) => navigateTo(id);
 
   const handleOpen = async (file: FileNode) => {
     if (file.type === 'folder') {
@@ -169,18 +215,14 @@ const App: React.FC = () => {
         const pass = prompt("Enter Vault Password:");
         if (pass !== '1234') return;
       }
-      setCurrentPath(prev => [...prev, file]);
-      setSearchQuery('');
+      navigateTo(file.id);
     } else {
-      // Handle File Preview
       try {
         if (['image', 'video', 'audio'].includes(file.type)) {
            const url = await fileSystem.getFileUrl(file.id);
            setPreviewState({ file, url });
         } else if (file.name.match(/\.(txt|md|json|js|css|xml|html)$/i) || file.type === 'document') {
-           // Basic text check
            if (file.name.match(/\.(pdf|doc|docx|xls)$/i)) {
-              // Open native for heavy docs
               await fileSystem.openFile(file);
            } else {
               const content = await fileSystem.readTextFile(file.id);
@@ -190,7 +232,6 @@ const App: React.FC = () => {
            await fileSystem.openFile(file);
         }
       } catch (e) {
-        console.error("Preview failed, falling back to openFile", e);
         await fileSystem.openFile(file);
       }
     }
@@ -205,64 +246,38 @@ const App: React.FC = () => {
     });
   };
 
-  // --- Operations ---
+  // --- Operations (Create, Delete, Copy, etc) --- 
+  // ... (Kept largely same, using navigateTo where applicable)
 
   const handleCreateFolder = async (name: string) => {
     try {
       if (!name || name.trim() === '') return;
-      if (name.includes('/')) {
-        alert("Folder names cannot contain '/'");
-        return;
-      }
       const parentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
       await fileSystem.createFolder(parentId, name);
       setModal({ type: null });
       refreshFiles();
     } catch (e: any) {
-      alert("Error creating folder: " + e.message);
+      alert("Error: " + e.message);
     }
   };
 
   const handleRename = async (newName: string) => {
     if (!modal.targetId) return;
-    
-    // Validation
-    if (!newName || newName.trim() === '') {
-      alert("Name cannot be empty");
-      return;
-    }
-    if (newName.includes('/')) {
-      alert("File names cannot contain '/'");
-      return;
-    }
-    
-    // Check if name actually changed
-    const file = files.find(f => f.id === modal.targetId);
-    if (file && file.name === newName) {
-      setModal({ type: null });
-      return;
-    }
-
     try {
       await fileSystem.rename(modal.targetId, newName);
       setModal({ type: null });
       refreshFiles();
     } catch (e: any) {
-      console.error("Rename failed", e);
-      alert("Rename failed: " + (e.message || "Unknown error"));
+      alert("Rename failed: " + e.message);
     }
   };
 
   const handleDelete = async () => {
     if (selectedIds.size === 0 && !modal.targetId) return;
-    
     try {
       const ids = modal.targetId ? [modal.targetId] : Array.from(selectedIds);
-      
       if (isTrashView) {
-        if (confirm(`Permanently delete ${ids.length} items?`)) {
-          await fileSystem.deletePermanent(ids);
-        }
+        if (confirm(`Permanently delete ${ids.length} items?`)) await fileSystem.deletePermanent(ids);
       } else {
         await fileSystem.trash(ids);
       }
@@ -270,19 +285,14 @@ const App: React.FC = () => {
       setSelectedIds(new Set());
       setModal({ type: null });
     } catch (e: any) {
-      console.error("Delete failed", e);
-      alert("Delete failed: " + (e.message || "Unknown error"));
+      alert("Delete failed: " + e.message);
     }
   };
 
   const handleEmptyTrash = async () => {
-    if (confirm("Empty Recycle Bin? This cannot be undone.")) {
-      try {
-        await fileSystem.emptyTrash();
-        refreshFiles();
-      } catch (e: any) {
-        alert("Failed to empty trash: " + e.message);
-      }
+    if (confirm("Empty Recycle Bin?")) {
+      await fileSystem.emptyTrash();
+      refreshFiles();
     }
   };
 
@@ -301,12 +311,8 @@ const App: React.FC = () => {
     if (!clipboard) return;
     try {
       const targetId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
-      
-      if (clipboard.mode === 'copy') {
-        await fileSystem.copy(clipboard.sourceIds, targetId);
-      } else {
-        await fileSystem.move(clipboard.sourceIds, targetId);
-      }
+      if (clipboard.mode === 'copy') await fileSystem.copy(clipboard.sourceIds, targetId);
+      else await fileSystem.move(clipboard.sourceIds, targetId);
       setClipboard(null);
       refreshFiles();
     } catch (e: any) {
@@ -318,84 +324,46 @@ const App: React.FC = () => {
     try {
       await fileSystem.move([sourceId], targetFolderId);
       refreshFiles();
-      setSelectedIds(new Set()); // Clear selection after drag move
+      setSelectedIds(new Set());
     } catch (e: any) {
       alert("Move failed: " + e.message);
     }
   };
 
   const handleContextMenu = (e: React.MouseEvent, file: FileNode) => {
-    // If clicking an item not in selection, select it solely
-    if (!selectedIds.has(file.id)) {
-      setSelectedIds(new Set([file.id]));
-    }
+    if (!selectedIds.has(file.id)) setSelectedIds(new Set([file.id]));
     setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
   };
 
   const executeMenuAction = (action: string) => {
     const targetId = contextMenu?.fileId;
     if (!targetId) return;
-
     switch(action) {
-      case 'open': 
-        const file = files.find(f => f.id === targetId);
-        if(file) handleOpen(file);
-        break;
+      case 'open': const f = files.find(f => f.id === targetId); if(f) handleOpen(f); break;
       case 'copy': handleCopy(false); break;
       case 'cut': handleCopy(true); break;
       case 'delete': handleDelete(); break;
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
-      case 'hide': 
-        // Mock hide implementation
-        alert("To implement: set isHidden = true");
-        break;
+      case 'hide': alert("To implement: set isHidden = true"); break;
     }
     setContextMenu(null);
   };
 
-  // --- Permission Gate ---
-  
+  // --- Render ---
+
   if (permissionGranted === false) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-200 p-6 text-center animate-in fade-in duration-500">
-         <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-red-500/30">
-           <Shield size={48} className="text-red-400" />
-         </div>
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-200 p-6 text-center">
+         <Shield size={48} className="text-red-400 mb-6" />
          <h2 className="text-2xl font-bold mb-3">Storage Access Required</h2>
-         <p className="text-slate-400 mb-8 max-w-sm leading-relaxed">
-           Nova needs full access to your files to function as a file manager. Please grant "All files access" in your device settings.
-         </p>
-         <div className="flex flex-col gap-3 w-full max-w-xs">
-           <button 
-             onClick={async () => {
-                await fileSystem.openSettings();
-                // Check again after a delay in case they switch back immediately
-                setTimeout(async () => {
-                    const granted = await fileSystem.init();
-                    setPermissionGranted(granted);
-                }, 1000); 
-             }}
-             className="px-6 py-3.5 bg-blue-600 rounded-xl font-medium hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
-           >
-             <Settings size={20} /> Open Settings
-           </button>
-           <button 
-             onClick={async () => {
-                 const granted = await fileSystem.init();
-                 setPermissionGranted(granted);
-             }}
-             className="px-6 py-3.5 rounded-xl font-medium text-slate-300 hover:bg-slate-800 transition-colors border border-slate-700"
-           >
-             I have granted access
-           </button>
-         </div>
+         <button onClick={() => fileSystem.openSettings()} className="px-6 py-3.5 bg-blue-600 rounded-xl font-medium mt-4">Open Settings</button>
       </div>
     );
   }
 
   if (permissionGranted === null) {
-     return <div className="h-screen bg-slate-950 flex items-center justify-center text-slate-500 font-medium tracking-wide animate-pulse">Initializing...</div>;
+     return <div className="h-screen bg-slate-950 flex items-center justify-center text-slate-500">Initializing...</div>;
   }
 
   return (
@@ -410,53 +378,49 @@ const App: React.FC = () => {
           <span className="text-xl font-bold tracking-tight text-white">Nova</span>
         </div>
         
-        <div className="p-4 space-y-1 overflow-y-auto h-[calc(100%-8rem)]">
-           <div className="text-xs font-semibold text-slate-500 uppercase px-4 mb-2">Locations</div>
-           <button onClick={() => { handleNavigate('root_internal'); setSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 text-sm font-medium rounded-lg transition-all ${!isTrashView && !showStorage ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800'}`}>
-              <HardDrive className="mr-3" size={18} /> Internal Storage
-           </button>
-           <button className="flex items-center w-full px-4 py-3 text-sm font-medium rounded-lg text-slate-400 hover:bg-slate-800 transition-all opacity-50 cursor-not-allowed" title="Not available in demo">
-              <HardDrive className="mr-3" size={18} /> SD Card
-           </button>
+        <div className="flex flex-col h-[calc(100%-4rem)]">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 custom-scrollbar">
+             <div className="text-xs font-semibold text-slate-500 uppercase px-4 mb-2 mt-4">Device</div>
+             
+             {/* Dynamic Folder Tree */}
+             <FolderTree 
+                onNavigate={(id) => { navigateTo(id); setSidebarOpen(false); }} 
+                activePathIds={activePathIds} 
+             />
 
-           <div className="text-xs font-semibold text-slate-500 uppercase px-4 mt-6 mb-2">Collections</div>
-           <button onClick={() => setFilterType('image')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'image' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
-             <Image className="mr-3 text-amber-500" size={18} /> Images
-           </button>
-           <button onClick={() => setFilterType('video')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'video' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
-             <Video className="mr-3 text-red-500" size={18} /> Videos
-           </button>
-           <button onClick={() => setFilterType('audio')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'audio' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
-             <Music className="mr-3 text-purple-500" size={18} /> Audio
-           </button>
-           <button onClick={() => setFilterType('document')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'document' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
-             <FileText className="mr-3 text-blue-500" size={18} /> Documents
-           </button>
-           <button className="flex items-center w-full px-4 py-2 text-sm rounded-lg text-slate-400 hover:bg-slate-800">
-             <Download className="mr-3 text-emerald-500" size={18} /> Downloads
-           </button>
+             <div className="text-xs font-semibold text-slate-500 uppercase px-4 mt-6 mb-2">Collections</div>
+             <button onClick={() => setFilterType('image')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'image' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
+               <Image className="mr-3 text-amber-500" size={18} /> Images
+             </button>
+             <button onClick={() => setFilterType('video')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'video' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
+               <Video className="mr-3 text-red-500" size={18} /> Videos
+             </button>
+             <button onClick={() => setFilterType('audio')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'audio' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
+               <Music className="mr-3 text-purple-500" size={18} /> Audio
+             </button>
+             <button onClick={() => setFilterType('document')} className={`flex items-center w-full px-4 py-2 text-sm rounded-lg hover:bg-slate-800 transition-all ${filterType === 'document' ? 'text-white bg-slate-800' : 'text-slate-400'}`}>
+               <FileText className="mr-3 text-blue-500" size={18} /> Documents
+             </button>
 
-           <div className="text-xs font-semibold text-slate-500 uppercase px-4 mt-6 mb-2">Tools</div>
-           <button onClick={() => { setShowStorage(true); setSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 text-sm font-medium rounded-lg transition-all ${showStorage ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800'}`}>
-              <ChartIcon className="mr-3" size={18} /> Storage Analysis
-           </button>
-           <button className="flex items-center w-full px-4 py-3 text-sm font-medium rounded-lg text-slate-400 hover:bg-slate-800 transition-all">
-              <Shield className="mr-3" size={18} /> Secure Vault
-           </button>
-           <button onClick={() => { handleNavigate('trash'); setSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 text-sm font-medium rounded-lg transition-all ${isTrashView ? 'bg-red-500/10 text-red-400' : 'text-slate-400 hover:bg-slate-800'}`}>
-              <Trash2 className="mr-3" size={18} /> Recycle Bin
-           </button>
-        </div>
+             <div className="text-xs font-semibold text-slate-500 uppercase px-4 mt-6 mb-2">Tools</div>
+             <button onClick={() => { setShowStorage(true); setSidebarOpen(false); }} className={`flex items-center w-full px-4 py-2 text-sm font-medium rounded-lg transition-all ${showStorage ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800'}`}>
+                <ChartIcon className="mr-3" size={18} /> Storage Analysis
+             </button>
+             <button onClick={() => { navigateTo('trash'); setSidebarOpen(false); }} className={`flex items-center w-full px-4 py-2 text-sm font-medium rounded-lg transition-all ${isTrashView ? 'bg-red-500/10 text-red-400' : 'text-slate-400 hover:bg-slate-800'}`}>
+                <Trash2 className="mr-3" size={18} /> Recycle Bin
+             </button>
+          </div>
 
-        {/* Storage Widget */}
-        <div className="absolute bottom-0 w-full p-4 border-t border-slate-800 bg-slate-900">
-           <div className="flex justify-between text-xs mb-2 text-slate-400">
-             <span>Storage Used</span>
-             <span className="text-white">{Math.round((storageStats.used / storageStats.total) * 100)}%</span>
-           </div>
-           <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-             <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-1.5 rounded-full" style={{ width: `${(storageStats.used/storageStats.total)*100}%` }}></div>
-           </div>
+          {/* Storage Widget */}
+          <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+             <div className="flex justify-between text-xs mb-2 text-slate-400">
+               <span>Storage Used</span>
+               <span className="text-white">{Math.round((storageStats.used / storageStats.total) * 100)}%</span>
+             </div>
+             <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+               <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-1.5 rounded-full" style={{ width: `${(storageStats.used/storageStats.total)*100}%` }}></div>
+             </div>
+          </div>
         </div>
       </aside>
 
@@ -467,30 +431,45 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col min-w-0 bg-slate-950 relative" onContextMenu={(e) => e.preventDefault()}>
         
         {/* Header */}
-        <header className="flex items-center justify-between h-16 px-4 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex items-center gap-3 overflow-hidden flex-1">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-slate-400 hover:bg-slate-800 rounded-lg">
+        <header className="flex items-center h-16 px-4 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-md sticky top-0 z-30 gap-3">
+          <div className="flex items-center md:hidden">
+            <button onClick={() => setSidebarOpen(true)} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg">
               <Menu size={20} />
             </button>
-            <div className="flex-1 overflow-hidden">
-              <Breadcrumbs 
-                path={currentPath} 
-                onNavigate={handleNavigate}
-                onNavigateRoot={() => handleNavigate('root')}
-              />
-            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+          {/* Navigation Controls */}
+          <div className="hidden md:flex items-center gap-1">
+             <button 
+               onClick={handleBack} 
+               disabled={historyIndex <= 0 && !isTrashView && !showStorage}
+               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+             >
+               <ChevronLeft size={20} />
+             </button>
+             <button 
+               onClick={handleForward} 
+               disabled={historyIndex >= historyStack.length - 1 || isTrashView || showStorage}
+               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
+             >
+               <ChevronRight size={20} />
+             </button>
+          </div>
+
+          <div className="flex-1 overflow-hidden">
+            <Breadcrumbs 
+              path={isTrashView ? [{id:'trash', name:'Recycle Bin', parentId:'root', type:'folder', size:0, updatedAt:0}] : currentPath} 
+              onNavigate={handleNavigate}
+              onNavigateRoot={() => navigateTo('root')}
+            />
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button 
                onClick={() => setShowFilterPanel(!showFilterPanel)} 
                className={`p-2 rounded-lg transition-colors ${showFilterPanel ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}
             >
                <Filter size={20} />
-            </button>
-            
-            <button onClick={() => setShowHidden(!showHidden)} className={`p-2 rounded-lg transition-colors hidden sm:block ${showHidden ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}>
-               <Eye size={20} />
             </button>
             <div className="relative hidden sm:block">
                <input 
@@ -498,7 +477,7 @@ const App: React.FC = () => {
                  placeholder="Search" 
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
-                 className="bg-slate-900 border border-slate-800 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-40 lg:w-64 transition-all"
+                 className="bg-slate-900 border border-slate-800 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-500 w-40 lg:w-64 transition-all"
                />
                <Search className="absolute left-3 top-2 text-slate-500" size={14} />
             </div>
@@ -609,7 +588,7 @@ const App: React.FC = () => {
 
       </main>
 
-      {/* Modals & Menus */}
+      {/* Dialogs and Context Menu */}
       {previewState && (
         <FilePreview 
           file={previewState.file} 

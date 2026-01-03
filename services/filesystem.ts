@@ -21,7 +21,6 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
 
 class AndroidFileSystem {
   
-  // Initialize permissions and hidden folders
   async init(): Promise<boolean> {
     try {
       const status = await Filesystem.checkPermissions();
@@ -31,16 +30,13 @@ class AndroidFileSystem {
            return false;
         }
       }
-      // Create trash folder if not exists
       try {
         await Filesystem.mkdir({
           path: TRASH_FOLDER,
           directory: Directory.ExternalStorage,
           recursive: true
         });
-      } catch (e) {
-        // Ignore if exists
-      }
+      } catch (e) { /* Ignore */ }
       return true;
     } catch (e) {
       console.error("Permission request failed", e);
@@ -49,41 +45,49 @@ class AndroidFileSystem {
   }
 
   async openSettings() {
-    try {
-      // App.openSettings() is not available in standard @capacitor/app.
-      console.warn("Opening settings is not supported without additional plugins.");
-    } catch (e) {
-      console.error("Failed to open settings", e);
-    }
-  }
-
-  // Helper to convert Capacitor FileInfo to FileNode
-  private convertToFileNode(file: FileInfo, parentId: string): FileNode {
-    const isDir = file.type === 'directory';
-    
-    return {
-      id: '', // Placeholder
-      parentId: parentId,
-      name: file.name,
-      type: getFileType(file.name, isDir),
-      size: file.size,
-      updatedAt: file.mtime,
-      isTrash: false,
-      isHidden: file.name.startsWith('.')
-    };
+    console.warn("Opening settings is not supported without additional plugins.");
   }
 
   async readdir(parentId: string | null, showHidden: boolean = false): Promise<FileNode[]> {
-    // Root handling
+    // 1. Virtual Root Handling (Device Level)
+    if (!parentId || parentId === 'root') {
+        return [
+            { 
+                id: 'root_internal', 
+                parentId: 'root', 
+                name: 'Internal Storage', 
+                type: 'folder', 
+                size: 0, 
+                updatedAt: Date.now(),
+                isProtected: false 
+            },
+            // Mock SD Card for UI demonstration (would require native plugin for real path)
+            { 
+                id: 'root_sd', 
+                parentId: 'root', 
+                name: 'SD Card', 
+                type: 'folder', 
+                size: 0, 
+                updatedAt: Date.now(),
+                isProtected: false 
+            }
+        ];
+    }
+
+    // 2. Map internal IDs to actual paths
     let path = '';
     let isTrash = false;
 
-    if (!parentId || parentId === 'root' || parentId === 'root_internal') {
-       path = ''; 
+    if (parentId === 'root_internal') {
+       path = ''; // Root of ExternalStorage
+    } else if (parentId === 'root_sd') {
+       // Mock empty SD card
+       return [];
     } else if (parentId === 'trash') {
        path = TRASH_FOLDER;
        isTrash = true;
     } else {
+       // It's a relative path (e.g. "DCIM/Camera")
        path = parentId;
     }
     
@@ -94,11 +98,12 @@ class AndroidFileSystem {
       });
 
       let nodes: FileNode[] = res.files.map(f => {
+        // Construct ID as relative path
         const relativePath = path ? `${path}/${f.name}` : f.name;
         
         return {
            id: relativePath,
-           parentId: parentId || 'root_internal',
+           parentId: parentId, // Use the ID passed in as parent
            name: f.name,
            type: getFileType(f.name, f.type === 'directory'),
            size: f.size,
@@ -112,7 +117,6 @@ class AndroidFileSystem {
         nodes = nodes.filter(f => !f.isHidden);
       }
       
-      // Filter out trash folder from normal view
       if (!isTrash) {
         nodes = nodes.filter(f => f.name !== TRASH_FOLDER);
       }
@@ -126,6 +130,9 @@ class AndroidFileSystem {
 
   async stat(id: string): Promise<FileNode | undefined> {
     try {
+      if (id === 'root_internal') return { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 };
+      if (id === 'root_sd') return { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 };
+
       const res = await Filesystem.stat({ path: id, directory: Directory.ExternalStorage });
       const name = id.split('/').pop() || id;
       return {
@@ -144,7 +151,9 @@ class AndroidFileSystem {
 
   async getPathNodes(id: string): Promise<FileNode[]> {
     if (id === 'trash') return [{ id: 'trash', name: 'Recycle Bin', type: 'folder', parentId: null, size: 0, updatedAt: 0 }];
-    if (id === 'root' || id === 'root_internal') return [];
+    if (id === 'root') return [];
+    if (id === 'root_internal') return [{ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 }];
+    if (id === 'root_sd') return [{ id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 }];
     
     // id is a relative path like "DCIM/Camera"
     const parts = id.split('/');
@@ -164,7 +173,7 @@ class AndroidFileSystem {
       });
     }
     
-    // Add Internal Storage Root
+    // Always prepend Internal Storage if we are in deep paths
     trail.unshift({ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 });
     
     return trail;
@@ -189,9 +198,6 @@ class AndroidFileSystem {
   async rename(id: string, newName: string): Promise<void> {
     const parentPath = id.substring(0, id.lastIndexOf('/'));
     const newPath = parentPath ? `${parentPath}/${newName}` : newName;
-    
-    console.debug(`[Nova] Renaming file. From: ${id}, To: ${newPath}`);
-
     try {
       await Filesystem.rename({
         from: id,
@@ -199,7 +205,6 @@ class AndroidFileSystem {
         directory: Directory.ExternalStorage
       });
     } catch (e: any) {
-      console.error("[Nova] Rename Error:", e);
       throw new Error(`Failed to rename file. ${e.message || ''}`);
     }
   }
@@ -244,65 +249,30 @@ class AndroidFileSystem {
     for (const id of ids) {
        const name = id.split('/').pop();
        if (!name) continue;
-
        const destPath = targetPath ? `${targetPath}/${name}` : name;
-       
-       // Prevent moving to same location
        if (id === destPath) continue;
 
        try {
-         // Attempt 1: Fast Rename
          await Filesystem.rename({
            from: id,
            to: destPath,
            directory: Directory.ExternalStorage
          });
        } catch (err) {
-          console.warn(`[Nova] Fast move failed for ${id}. Attempting recovery...`);
-          
-          // Attempt 2: Ensure destination directory exists, then retry rename
-          // This fixes cases where 'rename' fails simply because the parent folder is missing
           if (targetPath) {
              try {
-               await Filesystem.mkdir({
-                 path: targetPath,
-                 directory: Directory.ExternalStorage,
-                 recursive: true
-               });
-               await Filesystem.rename({
-                 from: id,
-                 to: destPath,
-                 directory: Directory.ExternalStorage
-               });
-               continue; // Success, skip fallback
-             } catch (retryErr) {
-               // Continue to fallback
-             }
+               await Filesystem.mkdir({ path: targetPath, directory: Directory.ExternalStorage, recursive: true });
+               await Filesystem.rename({ from: id, to: destPath, directory: Directory.ExternalStorage });
+               continue; 
+             } catch (retryErr) {}
           }
-
-          // Fallback: Copy then Delete (Robust Move)
           try {
-             await Filesystem.copy({
-               from: id,
-               to: destPath,
-               directory: Directory.ExternalStorage
-             });
-             
-             // Try to delete the original
+             await Filesystem.copy({ from: id, to: destPath, directory: Directory.ExternalStorage });
              try {
-                await Filesystem.deleteFile({
-                  path: id,
-                  directory: Directory.ExternalStorage
-                });
-             } catch (deleteErr: any) {
-                // Critical: If delete fails (common with special chars like #), 
-                // we consume the error because the file WAS copied. 
-                // We leave a duplicate rather than crashing the app flow.
-                console.error("[Nova] Warning: Failed to delete original file after copy. Duplicate remains.", deleteErr.message);
-             }
+                await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+             } catch (deleteErr) {}
           } catch (fallbackErr: any) {
-             console.error("[Nova] Move fallback failed", fallbackErr);
-             throw new Error(`Failed to move ${name}. ${fallbackErr.message || 'Access denied or file exists.'}`);
+             throw new Error(`Failed to move ${name}. ${fallbackErr.message}`);
           }
        }
     }
@@ -320,48 +290,24 @@ class AndroidFileSystem {
     }
   }
 
-  // --- Preview Helpers ---
-
   async getFileUrl(id: string): Promise<string> {
-    try {
-      const uriResult = await Filesystem.getUri({
-        path: id,
-        directory: Directory.ExternalStorage
-      });
-      return Capacitor.convertFileSrc(uriResult.uri);
-    } catch (e) {
-      console.error('Failed to get file URI', e);
-      throw e;
-    }
+    const uriResult = await Filesystem.getUri({ path: id, directory: Directory.ExternalStorage });
+    return Capacitor.convertFileSrc(uriResult.uri);
   }
 
   async readTextFile(id: string): Promise<string> {
-    try {
-      const contents = await Filesystem.readFile({
-        path: id,
-        directory: Directory.ExternalStorage,
-        encoding: Encoding.UTF8
-      });
-      return contents.data as string;
-    } catch (e) {
-      console.error('Failed to read text file', e);
-      throw e;
-    }
+    const contents = await Filesystem.readFile({ path: id, directory: Directory.ExternalStorage, encoding: Encoding.UTF8 });
+    return contents.data as string;
   }
 
   async openFile(file: FileNode): Promise<void> {
     try {
-      const uriResult = await Filesystem.getUri({
-        path: file.id,
-        directory: Directory.ExternalStorage
-      });
-      
+      const uriResult = await Filesystem.getUri({ path: file.id, directory: Directory.ExternalStorage });
       await FileOpener.open({
         filePath: uriResult.uri,
         contentType: this.getMimeType(file.type, file.name)
       });
     } catch (e: any) {
-      console.error('Error opening file', e);
       alert('Could not open file: ' + (e.message || e));
     }
   }
@@ -372,8 +318,6 @@ class AndroidFileSystem {
      if (ext === 'txt') return 'text/plain';
      if (ext === 'html') return 'text/html';
      if (ext === 'json') return 'application/json';
-     if (ext === 'js') return 'application/javascript';
-     if (ext === 'css') return 'text/css';
      
      if (type === 'image') return 'image/*';
      if (type === 'video') return 'video/*';
