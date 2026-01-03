@@ -6,6 +6,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
   <title>Nova Explorer</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              850: '#151e2e',
+              950: '#020617',
+            }
+          }
+        }
+      }
+    }
+    
+    // Check local storage for theme
+    if (localStorage.getItem('nova_theme') === 'light') {
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.add('dark');
+    }
+  </script>
   <style>
     /* Custom Scrollbar for a more native feel */
     ::-webkit-scrollbar {
@@ -14,15 +36,23 @@
     }
 
     ::-webkit-scrollbar-track {
-      background: #1e293b;
+      background: transparent;
     }
 
     ::-webkit-scrollbar-thumb {
-      background: #475569;
+      background: #cbd5e1;
       border-radius: 3px;
+    }
+    
+    .dark ::-webkit-scrollbar-thumb {
+      background: #475569;
     }
 
     ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .dark ::-webkit-scrollbar-thumb:hover {
       background: #64748b;
     }
 
@@ -51,7 +81,7 @@
 </script>
 </head>
 
-<body class="bg-slate-950 text-slate-100 overflow-hidden">
+<body class="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-300">
   <div id="root">
     <script type="module" src="/index.tsx"></script>
   </div>

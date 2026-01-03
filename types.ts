@@ -52,3 +52,7 @@ export interface ModalState {
   type: ModalType;
   targetId?: string; // For single item operations
 }
+
+export type Theme = 'dark' | 'light';
+
+export type PaneId = 'left' | 'right';
