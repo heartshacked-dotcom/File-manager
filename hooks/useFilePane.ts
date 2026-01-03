@@ -137,8 +137,31 @@ export const useFilePane = (initialPathId: string = 'root_internal', permissionG
       result = result.filter(f => f.type === filterType);
     }
 
-    // Apply Date/Size filters here (same logic as before)...
-    // Omitted for brevity, assuming similar logic to original App.tsx
+    if (filterDate !== 'ALL') {
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      result = result.filter(f => {
+        const diff = now - f.updatedAt;
+        switch (filterDate) {
+          case 'TODAY': return diff < oneDay;
+          case 'WEEK': return diff < 7 * oneDay;
+          case 'MONTH': return diff < 30 * oneDay;
+          default: return true;
+        }
+      });
+    }
+
+    if (filterSize !== 'ALL') {
+      result = result.filter(f => {
+        if (f.type === 'folder') return true;
+        switch (filterSize) {
+          case 'SMALL': return f.size < 1024 * 1024; // < 1MB
+          case 'MEDIUM': return f.size >= 1024 * 1024 && f.size < 100 * 1024 * 1024; // 1MB - 100MB
+          case 'LARGE': return f.size >= 100 * 1024 * 1024; // > 100MB
+          default: return true;
+        }
+      });
+    }
 
     result.sort((a, b) => {
       if (a.type === 'folder' && b.type !== 'folder') return -1;

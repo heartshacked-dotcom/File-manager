@@ -360,7 +360,6 @@ class AndroidFileSystem {
     if (id === 'root_internal') return [{ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 }];
     if (id === 'root_sd') return [{ id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 }];
     
-    // ... existing path parsing ...
     const parts = id.split('/');
     const trail: FileNode[] = [];
     let currentPath = '';
@@ -383,12 +382,10 @@ class AndroidFileSystem {
   }
 
   async search(query: string): Promise<FileNode[]> {
-    // Simple mock search, real implementation would require full scan or indexing
     return []; 
   }
 
   getStorageUsage() {
-    // In a real app, this should be calculated or retrieved via a plugin
     return { used: 15 * 1024*1024*1024, total: TOTAL_STORAGE, breakdown: {} };
   }
 
@@ -414,9 +411,6 @@ class AndroidFileSystem {
     }
   }
 
-  // move, copy, duplicate, compress, extract, toggleProtection, encryptFiles, decryptFiles 
-  // ... kept mostly same, but ensure they don't break with new trash logic
-  
   async move(ids: string[], targetParentId: string): Promise<void> {
     const targetPath = (targetParentId === 'root' || targetParentId === 'root_internal') ? '' : targetParentId;
     for (const id of ids) {
@@ -428,7 +422,6 @@ class AndroidFileSystem {
        try {
          await Filesystem.rename({ from: id, to: destPath, directory: Directory.ExternalStorage });
        } catch (err) {
-         // Fallback copy+delete if cross-fs (not really needed for basic external storage, but good practice)
          throw new Error("Move failed");
        }
     }
@@ -458,7 +451,6 @@ class AndroidFileSystem {
        let newName = `${base} copy${ext}`;
        let newPath = parentPath ? `${parentPath}/${newName}` : newName;
        
-       // ... existing duplicate loop logic ...
         while (true) {
          try {
             await Filesystem.stat({ path: newPath, directory: Directory.ExternalStorage });
@@ -472,7 +464,6 @@ class AndroidFileSystem {
     }
   }
 
-  // Archive & Security Ops (re-include to keep file valid)
   async compress(ids: string[], archiveName: string): Promise<void> {
     const parentId = ids[0].substring(0, ids[0].lastIndexOf('/'));
     const zipName = archiveName.endsWith('.zip') ? archiveName : `${archiveName}.zip`;
@@ -555,8 +546,59 @@ class AndroidFileSystem {
   }
 
   private getMimeType(type: string, name: string): string {
-     // ... existing mime logic ...
-     return '*/*'; 
+     const ext = name.split('.').pop()?.toLowerCase();
+     const mimeTypes: Record<string, string> = {
+         'pdf': 'application/pdf',
+         'txt': 'text/plain',
+         'html': 'text/html',
+         'json': 'application/json',
+         'xml': 'text/xml',
+         'js': 'application/javascript',
+         'ts': 'application/x-typescript',
+         'css': 'text/css',
+         'csv': 'text/csv',
+         'md': 'text/markdown',
+         'log': 'text/plain',
+         'py': 'text/x-python',
+         'java': 'text/x-java-source',
+         'c': 'text/x-c',
+         'cpp': 'text/x-c++',
+         'h': 'text/x-c',
+         'jpg': 'image/jpeg',
+         'jpeg': 'image/jpeg',
+         'png': 'image/png',
+         'gif': 'image/gif',
+         'webp': 'image/webp',
+         'mp4': 'video/mp4',
+         'mkv': 'video/x-matroska',
+         'avi': 'video/x-msvideo',
+         'mov': 'video/quicktime',
+         'mp3': 'audio/mpeg',
+         'wav': 'audio/wav',
+         'flac': 'audio/flac',
+         'ogg': 'audio/ogg',
+         'zip': 'application/zip',
+         'rar': 'application/x-rar-compressed',
+         '7z': 'application/x-7z-compressed',
+         'tar': 'application/x-tar',
+         'gz': 'application/gzip',
+         'doc': 'application/msword',
+         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+         'xls': 'application/vnd.ms-excel',
+         'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+         'ppt': 'application/vnd.ms-powerpoint',
+         'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+         'apk': 'application/vnd.android.package-archive'
+     };
+     
+     if (ext && mimeTypes[ext]) return mimeTypes[ext];
+     
+     if (type === 'image') return 'image/*';
+     if (type === 'video') return 'video/*';
+     if (type === 'audio') return 'audio/*';
+     if (type === 'archive') return 'application/zip';
+     
+     return '*/*';
   }
 }
 
