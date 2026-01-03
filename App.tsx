@@ -19,7 +19,7 @@ import {
   Menu, Settings, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Clipboard, 
   Plus, RefreshCw, Archive, Layout, Moon, Sun, Columns, 
-  Smartphone, HardDrive, ArrowLeft
+  Smartphone, HardDrive, ArrowLeft, Clock, Star, RotateCcw
 } from 'lucide-react';
 
 interface PreviewState {
@@ -40,7 +40,7 @@ const AppContent: React.FC = () => {
   const leftPane = useFilePane('root_internal', permissionGranted);
   const rightPane = useFilePane('root_sd', permissionGranted);
   const [activePaneId, setActivePaneId] = useState<PaneId>('left');
-  const [dualPaneEnabled, setDualPaneEnabled] = useState(false); // For Desktop/Tablet switch
+  const [dualPaneEnabled, setDualPaneEnabled] = useState(false);
   
   const activePane = activePaneId === 'left' ? leftPane : rightPane;
 
@@ -52,7 +52,6 @@ const AppContent: React.FC = () => {
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const [showStorage, setShowStorage] = useState(false);
   const [storageStats, setStorageStats] = useState({ used: 0, total: 0 });
-  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
 
   // --- Initialization ---
   useEffect(() => {
@@ -61,13 +60,9 @@ const AppContent: React.FC = () => {
       setPermissionGranted(granted);
     };
     checkPermissions();
-    
-    // Check screen size for initial dual pane
     if (window.innerWidth > 1024) setDualPaneEnabled(true);
   }, []);
 
-  // --- Operations that span panes or affect specific pane ---
-  
   const handleOpen = async (file: FileNode, pane: ReturnType<typeof useFilePane>) => {
     if (file.type === 'folder') {
       if (file.isProtected && !isAuthenticated) {
@@ -88,7 +83,6 @@ const AppContent: React.FC = () => {
            }
            return;
         }
-        // Preview logic
         if (['image', 'video', 'audio', 'document'].includes(file.type) || file.name.match(/\.(txt|md|json|js|ts|css|html|log)$/i)) {
            try {
              let url, content;
@@ -109,18 +103,10 @@ const AppContent: React.FC = () => {
   };
 
   const handleCopy = (isCut: boolean) => {
-    // Determine source from active pane selection
     const ids = Array.from(activePane.selectedIds);
     if (ids.length === 0) return;
-    
-    // Determine parent. If multi-selection, assume same parent or use currentPath
     const parentId = activePane.currentPath.length > 0 ? activePane.currentPath[activePane.currentPath.length - 1].id : 'root';
-    
-    setClipboard({
-      mode: isCut ? 'cut' : 'copy',
-      sourceIds: ids,
-      sourceParentId: parentId
-    });
+    setClipboard({ mode: isCut ? 'cut' : 'copy', sourceIds: ids, sourceParentId: parentId });
     activePane.setSelectedIds(new Set());
     setContextMenu(null);
   };
@@ -128,31 +114,39 @@ const AppContent: React.FC = () => {
   const handlePaste = async () => {
     if (!clipboard) return;
     try {
-      // Target is active pane
       const targetId = activePane.currentPath.length > 0 ? activePane.currentPath[activePane.currentPath.length - 1].id : 'root';
-      
       if (clipboard.mode === 'copy') await fileSystem.copy(clipboard.sourceIds, targetId);
       else await fileSystem.move(clipboard.sourceIds, targetId);
-      
       setClipboard(null);
-      // Refresh both to be safe
       leftPane.refreshFiles();
       rightPane.refreshFiles();
-    } catch (e: any) {
-      alert("Paste failed: " + e.message);
-    }
+    } catch (e: any) { alert("Paste failed: " + e.message); }
   };
 
   const handleDelete = async () => {
     const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
     if (ids.length === 0) return;
     
-    if (confirm(`Delete ${ids.length} items?`)) {
-       await fileSystem.trash(ids);
+    // Check if we are in Trash
+    const isTrash = activePane.currentPath.some(p => p.id === 'trash');
+
+    if (confirm(isTrash ? `Permanently delete ${ids.length} items?` : `Move ${ids.length} items to Recycle Bin?`)) {
+       if (isTrash) await fileSystem.deletePermanent(ids);
+       else await fileSystem.trash(ids);
+       
        activePane.refreshFiles();
        activePane.setSelectedIds(new Set());
        setModal({ type: null });
     }
+  };
+
+  const handleRestore = async () => {
+    const ids = modal.targetId ? [modal.targetId] : Array.from(activePane.selectedIds);
+    if (ids.length === 0) return;
+    await fileSystem.restore(ids);
+    activePane.refreshFiles();
+    activePane.setSelectedIds(new Set());
+    setModal({ type: null });
   };
 
   const handleCreateFolder = async (name: string) => {
@@ -169,7 +163,6 @@ const AppContent: React.FC = () => {
     rightPane.refreshFiles();
   };
 
-  // --- Context Menu & Dialogs ---
   const handleContextMenu = (e: React.MouseEvent, file: FileNode, paneId: PaneId) => {
     setActivePaneId(paneId);
     const pane = paneId === 'left' ? leftPane : rightPane;
@@ -179,7 +172,7 @@ const AppContent: React.FC = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, fileId: file.id, paneId });
   };
 
-  const executeMenuAction = (action: string) => {
+  const executeMenuAction = async (action: string) => {
     const targetId = contextMenu?.fileId;
     if (!targetId) return;
     
@@ -190,15 +183,18 @@ const AppContent: React.FC = () => {
       case 'copy': handleCopy(false); break;
       case 'cut': handleCopy(true); break;
       case 'delete': handleDelete(); break;
+      case 'restore': handleRestore(); break;
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
       case 'encrypt': setModal({ type: 'ENCRYPT', targetId }); break;
-      // ... other actions
+      case 'bookmark': 
+         await fileSystem.toggleBookmark(targetId);
+         if (pane.currentPath.some(p => p.id === 'favorites')) pane.refreshFiles();
+         break;
     }
     setContextMenu(null);
   };
 
-  // --- Auth & Encryption ---
   const handleAuthSuccess = (pin: string) => {
     if (!vaultPinHash) {
        SecurityService.hashPin(pin).then(h => {
@@ -229,8 +225,6 @@ const AppContent: React.FC = () => {
      } catch (e: any) { alert(e.message); }
   };
 
-  // --- Render ---
-
   if (permissionGranted === false) return <div className="p-8 text-center text-slate-500">Storage permission required.</div>;
   if (permissionGranted === null) return <div className="p-8 text-center text-slate-500">Initializing...</div>;
 
@@ -245,11 +239,20 @@ const AppContent: React.FC = () => {
         </div>
         
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
+           <div className="px-4 pt-4 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Drives</div>
            <button onClick={() => { setActivePaneId('left'); leftPane.navigateTo('root_internal'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <Smartphone size={18} className="mr-3" /> Internal Storage
            </button>
            <button onClick={() => { setActivePaneId('left'); leftPane.navigateTo('root_sd'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <HardDrive size={18} className="mr-3" /> SD Card
+           </button>
+           
+           <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Access</div>
+           <button onClick={() => { activePane.navigateTo('recent'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+              <Clock size={18} className="mr-3" /> Recent Files
+           </button>
+           <button onClick={() => { activePane.navigateTo('favorites'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+              <Star size={18} className="mr-3" /> Favorites
            </button>
            
            <div className="pt-4 pb-2 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Locations</div>
@@ -259,24 +262,24 @@ const AppContent: React.FC = () => {
            <button onClick={() => setShowStorage(true)} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <ChartIcon size={18} className="mr-3" /> Storage Analysis
            </button>
+           <button onClick={() => { activePane.navigateTo('trash'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-500 dark:hover:text-red-400 transition-colors">
+              <Trash2 size={18} className="mr-3" /> Recycle Bin
+           </button>
            <button onClick={() => setModal({ type: 'SETTINGS' })} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <Settings size={18} className="mr-3" /> Settings
            </button>
         </div>
         
-        {/* Sidebar Footer (Theme Toggle) */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors">
                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <span className="text-xs text-slate-400">v2.0 Pro</span>
+            <span className="text-xs text-slate-400">v2.1 Pro</span>
         </div>
       </aside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-         
-         {/* Mobile Header */}
          <header className="h-16 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 md:hidden z-20">
             <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 text-slate-600 dark:text-slate-400">
                <Menu size={24} />
@@ -287,7 +290,6 @@ const AppContent: React.FC = () => {
             </button>
          </header>
 
-         {/* Desktop Toolbar (Top Right) */}
          <div className="hidden md:flex absolute top-4 right-6 z-30 gap-2">
             <button 
               onClick={() => setDualPaneEnabled(!dualPaneEnabled)} 
@@ -304,11 +306,7 @@ const AppContent: React.FC = () => {
 
          {/* Pane Container */}
          <div className="flex-1 flex overflow-hidden p-2 gap-2 relative">
-            
-            {/* Left Pane (Always visible unless mobile toggled to right) */}
-            <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${
-              dualPaneEnabled ? 'w-1/2' : (activePaneId === 'left' ? 'w-full' : 'hidden md:block md:w-full')
-            }`}>
+            <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'left' ? 'w-full' : 'hidden md:block md:w-full')}`}>
                <FileBrowserPane 
                   id="left"
                   isActive={activePaneId === 'left'}
@@ -319,12 +317,8 @@ const AppContent: React.FC = () => {
                   onDropFile={handleDropMove}
                />
             </div>
-
-            {/* Right Pane (Visible if Dual Pane Enabled) */}
             {(dualPaneEnabled || activePaneId === 'right') && (
-              <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${
-                 dualPaneEnabled ? 'w-1/2' : (activePaneId === 'right' ? 'w-full' : 'hidden')
-              }`}>
+              <div className={`flex-1 min-w-0 h-full transition-all duration-300 ${dualPaneEnabled ? 'w-1/2' : (activePaneId === 'right' ? 'w-full' : 'hidden')}`}>
                  <FileBrowserPane 
                     id="right"
                     isActive={activePaneId === 'right'}
@@ -338,27 +332,17 @@ const AppContent: React.FC = () => {
             )}
          </div>
 
-         {/* Bottom Mobile Tab Bar (If Dual Pane is OFF on Mobile) */}
          {!dualPaneEnabled && (
            <div className="md:hidden h-14 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex">
-              <button 
-                onClick={() => setActivePaneId('left')} 
-                className={`flex-1 flex flex-col items-center justify-center ${activePaneId === 'left' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
-              >
-                 <Layout size={20} />
-                 <span className="text-[10px] font-medium">Pane 1</span>
+              <button onClick={() => setActivePaneId('left')} className={`flex-1 flex flex-col items-center justify-center ${activePaneId === 'left' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                 <Layout size={20} /><span className="text-[10px] font-medium">Pane 1</span>
               </button>
-              <button 
-                onClick={() => setActivePaneId('right')} 
-                className={`flex-1 flex flex-col items-center justify-center ${activePaneId === 'right' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}
-              >
-                 <Layout size={20} />
-                 <span className="text-[10px] font-medium">Pane 2</span>
+              <button onClick={() => setActivePaneId('right')} className={`flex-1 flex flex-col items-center justify-center ${activePaneId === 'right' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                 <Layout size={20} /><span className="text-[10px] font-medium">Pane 2</span>
               </button>
            </div>
          )}
          
-         {/* FAB */}
          <div className="absolute bottom-6 right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
             {clipboard && (
                <button onClick={handlePaste} className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-slate-900 dark:bg-slate-800 border border-slate-700 text-white rounded-full shadow-xl hover:scale-105 transition-transform">
@@ -370,21 +354,28 @@ const AppContent: React.FC = () => {
             </button>
          </div>
 
-         {/* Selection Bar */}
          {activePane.selectedIds.size > 0 && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
                <span className="px-3 font-bold text-sm whitespace-nowrap">{activePane.selectedIds.size} selected</span>
                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-               <button onClick={() => handleCopy(false)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="Copy"><Copy size={18}/></button>
-               <button onClick={() => handleCopy(true)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="Cut"><Scissors size={18}/></button>
-               <button onClick={handleDelete} className="p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-xl" title="Delete"><Trash2 size={18}/></button>
+               {activePane.currentPath.some(p => p.id === 'trash') ? (
+                 <>
+                   <button onClick={handleRestore} className="p-3 hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl" title="Restore"><RotateCcw size={18}/></button>
+                   <button onClick={handleDelete} className="p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-xl" title="Delete Forever"><Trash2 size={18}/></button>
+                 </>
+               ) : (
+                 <>
+                   <button onClick={() => handleCopy(false)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="Copy"><Copy size={18}/></button>
+                   <button onClick={() => handleCopy(true)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl" title="Cut"><Scissors size={18}/></button>
+                   <button onClick={handleDelete} className="p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-xl" title="Delete"><Trash2 size={18}/></button>
+                 </>
+               )}
                <button onClick={() => activePane.setSelectedIds(new Set())} className="px-3 text-xs font-bold uppercase text-slate-400">Cancel</button>
             </div>
          )}
-
       </div>
 
-      {/* Global Overlays */}
+      {/* Overlays */}
       {showStorage && (
          <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 animate-in slide-in-from-bottom-full duration-300">
             <div className="p-4">
@@ -394,17 +385,8 @@ const AppContent: React.FC = () => {
          </div>
       )}
       
-      {/* Dialogs */}
       <AuthDialog isOpen={modal.type === 'AUTH'} mode={vaultPinHash ? 'ENTER' : 'CREATE'} onSuccess={handleAuthSuccess} onClose={() => setModal({ type: null })} />
-      <SettingsDialog 
-         isOpen={modal.type === 'SETTINGS'} 
-         onClose={() => setModal({ type: null })} 
-         showHidden={activePane.showHidden} 
-         onToggleHidden={(v) => { leftPane.setShowHidden(v); rightPane.setShowHidden(v); }}
-         showProtected={activePane.showHidden} // Simplified mapping
-         onToggleProtected={() => {}}
-         onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }}
-      />
+      <SettingsDialog isOpen={modal.type === 'SETTINGS'} onClose={() => setModal({ type: null })} showHidden={activePane.showHidden} onToggleHidden={(v) => { leftPane.setShowHidden(v); rightPane.setShowHidden(v); }} showProtected={activePane.showHidden} onToggleProtected={() => {}} onResetPin={() => { setVaultPinHash(null); localStorage.removeItem('nova_vault_pin'); setModal({ type: 'AUTH' }); }} />
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Name" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} actionLabel="Create" />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename" defaultValue={activePane.files.find(f => f.id === modal.targetId)?.name} onClose={() => setModal({ type: null })} onSubmit={async (name) => { if(modal.targetId) await fileSystem.rename(modal.targetId, name); activePane.refreshFiles(); setModal({ type: null }); }} actionLabel="Rename" />
       <InputDialog isOpen={modal.type === 'ENCRYPT' || modal.type === 'DECRYPT'} title={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} placeholder="Password" onClose={() => setModal({ type: null })} onSubmit={handleEncryption} actionLabel={modal.type === 'ENCRYPT' ? "Encrypt" : "Decrypt"} />
@@ -417,11 +399,12 @@ const AppContent: React.FC = () => {
           onClose={() => setContextMenu(null)} 
           onAction={executeMenuAction}
           singleFile={true}
-          isFolder={true} // Simplified check
+          isFolder={activePane.files.find(f => f.id === contextMenu.fileId)?.type === 'folder'}
           isProtected={false}
+          isTrash={activePane.currentPath.some(p => p.id === 'trash')}
+          isBookmarked={contextMenu.fileId ? fileSystem.isBookmarked(contextMenu.fileId) : false}
         />
       )}
-
     </div>
   );
 };

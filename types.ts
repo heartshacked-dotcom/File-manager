@@ -12,6 +12,7 @@ export interface FileNode {
   isTrash?: boolean;
   isHidden?: boolean;
   isEncrypted?: boolean;
+  originalPath?: string; // For restored files
 }
 
 export interface BreadcrumbItem {
