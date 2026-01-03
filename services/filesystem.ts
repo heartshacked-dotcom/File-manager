@@ -424,14 +424,16 @@ class AndroidFileSystem {
          path: newPath,
          data: encryptedData,
          directory: Directory.ExternalStorage,
-         // Write as string (Base64 implies text in this context for filesystem write usually, 
-         // but we want binary. Web implementation of Capacitor might need utf8 if not base64)
-         // We'll trust Capacitor handles base64 string writes correctly if no encoding specified?
-         // Actually, Filesystem.writeFile takes data as string. 
        });
 
        // 4. Delete original
-       await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+       try {
+         await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+       } catch (e) {
+         // If delete fails, we assume permission denied (Scoped Storage). 
+         // Warn the user instead of failing completely, as the encrypted copy exists.
+         throw new Error("Encrypted copy created, but failed to delete original file (Permission denied). Please delete it manually.");
+       }
      }
   }
 
@@ -460,7 +462,11 @@ class AndroidFileSystem {
       });
 
       // 4. Delete encrypted
-      await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+      try {
+        await Filesystem.deleteFile({ path: id, directory: Directory.ExternalStorage });
+      } catch (e) {
+        throw new Error("Decrypted successfully, but failed to delete encrypted file.");
+      }
     }
   }
 

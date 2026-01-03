@@ -36,7 +36,7 @@ const App: React.FC = () => {
   
   const [files, setFiles] = useState<FileNode[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.GRID);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set<string>());
   const [lastFocusedId, setLastFocusedId] = useState<string | null>(null);
   
   // Permission & Security State
@@ -60,7 +60,7 @@ const App: React.FC = () => {
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string } | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
-  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set<string>());
   const [bookmarkedNodes, setBookmarkedNodes] = useState<FileNode[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   
@@ -342,11 +342,11 @@ const App: React.FC = () => {
       } else {
         await fileSystem.decryptFiles([id], password);
       }
-      refreshFiles();
       setModal({ type: null });
     } catch (e: any) {
-      alert("Operation failed: " + e.message);
+      alert("Operation warning: " + e.message);
     } finally {
+      refreshFiles();
       setIsProcessing(false);
     }
   };
@@ -459,7 +459,7 @@ const App: React.FC = () => {
   };
 
   const handleCompress = async (name: string) => {
-    const ids = Array.from(selectedIds);
+    const ids = (modal.targetId ? [modal.targetId] : Array.from(selectedIds)) as string[];
     if (ids.length === 0) return;
     setIsProcessing(true);
     try {
