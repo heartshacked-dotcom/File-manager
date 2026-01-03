@@ -92,6 +92,67 @@ const AppContent: React.FC = () => {
     return () => { listener.then(l => l.remove()); }
   }, [checkPermissions, permStatus]);
 
+  // --- Back Button Handling ---
+  useEffect(() => {
+    const handleBackButton = async () => {
+      // 1. Overlays / Modals / Fullscreen Views
+      if (previewState) {
+        setPreviewState(null);
+        return;
+      }
+      if (showSearch) {
+        setShowSearch(false);
+        return;
+      }
+      if (showStorage) {
+        setShowStorage(false);
+        return;
+      }
+      if (compressionState.isOpen) {
+        setCompressionState(prev => ({ ...prev, isOpen: false }));
+        return;
+      }
+      if (encryptionModal.isOpen) {
+        setEncryptionModal(prev => ({ ...prev, isOpen: false }));
+        return;
+      }
+      if (modal.type) {
+        setModal({ type: null });
+        return;
+      }
+      if (contextMenu) {
+        setContextMenu(null);
+        return;
+      }
+
+      // 2. Sidebar
+      if (sidebarOpen) {
+        setSidebarOpen(false);
+        return;
+      }
+
+      // 3. Selection
+      if (filePane.selectedIds.size > 0) {
+        filePane.setSelectedIds(new Set());
+        return;
+      }
+
+      // 4. Navigation
+      if (filePane.canGoBack) {
+        filePane.goBack();
+      } else {
+        // Exit if we can't go back any further
+        CapacitorApp.exitApp();
+      }
+    };
+
+    const listener = CapacitorApp.addListener('backButton', handleBackButton);
+    return () => { listener.then(l => l.remove()); };
+  }, [
+    previewState, showSearch, showStorage, compressionState.isOpen, encryptionModal.isOpen, 
+    modal.type, contextMenu, sidebarOpen, filePane
+  ]);
+
   // Navigate Logic with Vault Protection
   const handleNavigate = (id: string) => {
     if (id === VAULT_FOLDER && !vaultUnlocked) {

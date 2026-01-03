@@ -202,12 +202,6 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
            />
          </div>
       </div>
-
-      {/* Footer Status */}
-      <div className="px-3 pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom))] border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center text-[10px] text-slate-500 dark:text-slate-400">
-          <span>{files.length} items {isTrashLocation ? '(Trash)' : ''}</span>
-          <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : ''}</span>
-      </div>
     </div>
   );
 };
