@@ -1,3 +1,4 @@
+
 export type FileType = 'folder' | 'image' | 'video' | 'audio' | 'document' | 'archive' | 'unknown';
 
 export interface FileNode {
@@ -36,13 +37,15 @@ export enum SortDirection {
 
 export type DateFilter = 'ALL' | 'TODAY' | 'WEEK' | 'MONTH';
 
+export type SizeFilter = 'ALL' | 'SMALL' | 'MEDIUM' | 'LARGE';
+
 export interface ClipboardState {
   mode: 'copy' | 'cut';
   sourceIds: string[];
   sourceParentId: string | null;
 }
 
-export type ModalType = 'RENAME' | 'CREATE_FOLDER' | 'PROPERTIES' | 'DELETE_CONFIRM' | null;
+export type ModalType = 'RENAME' | 'CREATE_FOLDER' | 'PROPERTIES' | 'DELETE_CONFIRM' | 'COMPRESS' | null;
 
 export interface ModalState {
   type: ModalType;

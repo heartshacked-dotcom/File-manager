@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { 
   Copy, Scissors, Trash2, Edit2, Info, Share2, 
-  ExternalLink, EyeOff, FolderOpen, CopyPlus 
+  ExternalLink, EyeOff, FolderOpen, CopyPlus,
+  Archive, Expand, Star
 } from 'lucide-react';
 
 interface ContextMenuProps {
@@ -11,9 +12,11 @@ interface ContextMenuProps {
   onAction: (action: string) => void;
   singleFile?: boolean;
   isFolder?: boolean;
+  fileType?: string;
+  isBookmarked?: boolean;
 }
 
-const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, singleFile, isFolder }) => {
+const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, singleFile, isFolder, fileType, isBookmarked }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,20 +30,43 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, onAction, sing
   }, [onClose]);
 
   // Adjust position to not overflow screen
-  const adjustedX = Math.min(x, window.innerWidth - 200);
-  const adjustedY = Math.min(y, window.innerHeight - 340);
+  const adjustedX = Math.min(x, window.innerWidth - 220);
+  const adjustedY = Math.min(y, window.innerHeight - 450);
+
+  const isArchive = fileType === 'archive' || (singleFile && ['zip', 'rar', '7z', 'tar', 'gz'].some(ext => fileType?.includes(ext)));
 
   return (
     <div 
       ref={menuRef}
-      className="fixed z-50 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl py-1 animate-in zoom-in-95 duration-100 origin-top-left"
+      className="fixed z-50 w-52 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl py-1 animate-in zoom-in-95 duration-100 origin-top-left"
       style={{ left: adjustedX, top: adjustedY }}
     >
       {singleFile && isFolder && (
-        <button onClick={() => onAction('open')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
-          <FolderOpen size={16} /> Open
-        </button>
+        <>
+          <button onClick={() => onAction('open')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+            <FolderOpen size={16} /> Open
+          </button>
+          <button onClick={() => onAction('bookmark')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+            <Star size={16} className={isBookmarked ? "fill-amber-400 text-amber-400" : ""} /> 
+            {isBookmarked ? "Remove Favorite" : "Add to Favorites"}
+          </button>
+          <div className="h-px bg-slate-700 my-1"></div>
+        </>
       )}
+
+      {/* Archive Operations */}
+      <button onClick={() => onAction('compress')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+        <Archive size={16} /> Compress
+      </button>
+      
+      {singleFile && isArchive && (
+         <button onClick={() => onAction('extract')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
+            <Expand size={16} /> Extract Here
+         </button>
+      )}
+      
+      <div className="h-px bg-slate-700 my-1"></div>
+
       <button onClick={() => onAction('copy')} className="w-full px-4 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-700 flex items-center gap-3">
         <Copy size={16} /> Copy
       </button>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   FileNode, ViewMode, SortField, SortDirection, DateFilter, 
-  ClipboardState, ModalState, FileType
+  ClipboardState, ModalState, FileType, SizeFilter
 } from './types';
 import { fileSystem } from './services/filesystem';
 import FileList from './components/FileList';
@@ -16,7 +16,7 @@ import {
   Menu, Search, Grid, List, Plus, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Eye, Clipboard, ArrowLeft,
   Download, Music, Video, Image, FileText, RefreshCw, Filter, Settings,
-  ChevronLeft, ChevronRight, Home
+  ChevronLeft, ChevronRight, Home, Star, Archive
 } from 'lucide-react';
 
 interface PreviewState {
@@ -45,6 +45,7 @@ const App: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<SortDirection>(SortDirection.ASC);
   const [filterType, setFilterType] = useState<FileType | 'all'>('all');
   const [filterDate, setFilterDate] = useState<DateFilter>('ALL');
+  const [filterSize, setFilterSize] = useState<SizeFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   
@@ -54,6 +55,9 @@ const App: React.FC = () => {
   const [modal, setModal] = useState<ModalState>({ type: null });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, fileId?: string } | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState | null>(null);
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [bookmarkedNodes, setBookmarkedNodes] = useState<FileNode[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // UI State
   const [showStorage, setShowStorage] = useState(false);
@@ -75,7 +79,27 @@ const App: React.FC = () => {
       }
     };
     checkPermissions();
+
+    // Load bookmarks
+    const saved = localStorage.getItem('nova_bookmarks');
+    if (saved) {
+      setBookmarks(new Set(JSON.parse(saved) as string[]));
+    }
   }, []);
+
+  // Sync bookmark nodes
+  useEffect(() => {
+    const loadBookmarks = async () => {
+      const nodes: FileNode[] = [];
+      for (const id of bookmarks) {
+        const node = await fileSystem.stat(id);
+        if (node) nodes.push(node);
+      }
+      setBookmarkedNodes(nodes);
+    };
+    loadBookmarks();
+    localStorage.setItem('nova_bookmarks', JSON.stringify(Array.from(bookmarks)));
+  }, [bookmarks]);
 
   // --- Data Loading ---
   const refreshFiles = useCallback(async () => {
@@ -124,6 +148,17 @@ const App: React.FC = () => {
        });
     }
 
+    if (filterSize !== 'ALL') {
+      result = result.filter(f => {
+        if (f.type === 'folder') return false; // Hide folders when filtering size usually? Or keep them? Solid explorer keeps them but sortable. Let's strict filter files.
+        const mb = f.size / (1024 * 1024);
+        if (filterSize === 'SMALL') return mb < 1;
+        if (filterSize === 'MEDIUM') return mb >= 1 && mb < 100;
+        if (filterSize === 'LARGE') return mb >= 100;
+        return true;
+      });
+    }
+
     result.sort((a, b) => {
       if (a.type === 'folder' && b.type !== 'folder') return -1;
       if (a.type !== 'folder' && b.type === 'folder') return 1;
@@ -142,7 +177,7 @@ const App: React.FC = () => {
     });
 
     return result;
-  }, [files, searchQuery, filterType, filterDate, sortField, sortDirection]);
+  }, [files, searchQuery, filterType, filterDate, filterSize, sortField, sortDirection]);
 
   // --- Navigation Actions ---
   const navigateTo = async (id: string) => {
@@ -198,38 +233,47 @@ const App: React.FC = () => {
       navigateTo(file.id);
     } else {
       try {
-        // 1. Media Preview
+        if (file.type === 'archive' || file.name.endsWith('.zip')) {
+           if (confirm("Extract this archive?")) {
+              setIsProcessing(true);
+              try {
+                await fileSystem.extract(file.id);
+                refreshFiles();
+              } finally {
+                setIsProcessing(false);
+              }
+           }
+           return;
+        }
+
+        // Media Preview
         if (['image', 'video', 'audio'].includes(file.type)) {
            const url = await fileSystem.getFileUrl(file.id);
            setPreviewState({ file, url });
            return;
         } 
         
-        // 2. Text/Code Preview
-        // Explicitly check extensions for text/code vs binary docs
+        // Text/Code Preview
         const isCodeOrText = file.name.match(/\.(txt|md|json|js|jsx|ts|tsx|css|xml|html|log|csv|ini|conf|yml|yaml|py|java|c|cpp|h)$/i);
         const isBinaryDoc = file.name.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|apk)$/i);
 
         if (isCodeOrText && !isBinaryDoc) {
-           // Safety: Limit text preview to 2MB to prevent main thread freeze
            if (file.size > 2 * 1024 * 1024) {
               if (confirm(`File is too large for preview (${(file.size/1024/1024).toFixed(1)} MB). Open externally?`)) {
                  await fileSystem.openFile(file);
               }
               return;
            }
-
            const content = await fileSystem.readTextFile(file.id);
            setPreviewState({ file, content });
            return;
         } 
 
-        // 3. Default: Open Externally
+        // Default: Open Externally
         await fileSystem.openFile(file);
 
       } catch (e: any) {
         console.error("File open error:", e);
-        // Fallback prompt if internal open logic fails or external app launch fails
         if (confirm(`Could not open ${file.name}. Try opening with default system app?`)) {
            try {
              await fileSystem.openFile(file);
@@ -331,6 +375,49 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCompress = async (name: string) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setIsProcessing(true);
+    try {
+      await fileSystem.compress(ids, name);
+      setModal({ type: null });
+      setSelectedIds(new Set());
+      refreshFiles();
+    } catch (e: any) {
+      alert("Compression failed: " + e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleExtract = async () => {
+    const id = modal.targetId || Array.from(selectedIds)[0];
+    if (!id) return;
+    setIsProcessing(true);
+    try {
+      await fileSystem.extract(id);
+      setModal({ type: null });
+      refreshFiles();
+    } catch (e: any) {
+      alert("Extraction failed: " + e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleToggleBookmark = () => {
+    const id = contextMenu?.fileId;
+    if (!id) return;
+    setBookmarks(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setContextMenu(null);
+  };
+
   const handleEmptyTrash = async () => {
     if (confirm("Empty Recycle Bin?")) {
       await fileSystem.emptyTrash();
@@ -392,6 +479,9 @@ const App: React.FC = () => {
       case 'rename': setModal({ type: 'RENAME', targetId }); break;
       case 'properties': setModal({ type: 'PROPERTIES', targetId }); break;
       case 'hide': alert("To implement: set isHidden = true"); break;
+      case 'bookmark': handleToggleBookmark(); break;
+      case 'compress': setModal({ type: 'COMPRESS', targetId }); break;
+      case 'extract': handleExtract(); break;
     }
     setContextMenu(null);
   };
@@ -426,6 +516,24 @@ const App: React.FC = () => {
         
         <div className="flex flex-col h-[calc(100%-4rem)]">
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 custom-scrollbar">
+             
+             {/* Favorites Section */}
+             {bookmarkedNodes.length > 0 && (
+                <>
+                  <div className="text-xs font-semibold text-slate-500 uppercase px-4 mb-2 mt-4">Favorites</div>
+                  {bookmarkedNodes.map(node => (
+                    <button 
+                      key={node.id} 
+                      onClick={() => { navigateTo(node.id); setSidebarOpen(false); }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors group"
+                    >
+                      <Star size={16} className="mr-3 text-amber-400 fill-amber-400" />
+                      <span className="truncate">{node.name}</span>
+                    </button>
+                  ))}
+                </>
+             )}
+
              <div className="text-xs font-semibold text-slate-500 uppercase px-4 mb-2 mt-4">Device</div>
              <FolderTree onNavigate={(id) => { navigateTo(id); setSidebarOpen(false); }} activePathIds={activePathIds} />
 
@@ -484,7 +592,9 @@ const App: React.FC = () => {
             <Breadcrumbs path={isTrashView ? [{id:'trash', name:'Recycle Bin', parentId:'root', type:'folder', size:0, updatedAt:0}] : currentPath} onNavigate={handleNavigate} onNavigateRoot={() => navigateTo('root')} />
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={() => setShowFilterPanel(!showFilterPanel)} className={`p-2 rounded-lg transition-colors ${showFilterPanel ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}><Filter size={20} /></button>
+            <button onClick={() => setShowFilterPanel(!showFilterPanel)} className={`p-2 rounded-lg transition-colors ${showFilterPanel ? 'text-blue-400 bg-blue-500/10' : 'text-slate-400 hover:bg-slate-800'}`}>
+                <Filter size={20} className={filterSize !== 'ALL' || filterType !== 'all' || filterDate !== 'ALL' ? 'text-blue-400 fill-blue-400' : ''} />
+            </button>
             <div className="relative hidden sm:block">
                <input type="text" placeholder="Search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-slate-900 border border-slate-800 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-500 w-40 lg:w-64 transition-all" />
                <Search className="absolute left-3 top-2 text-slate-500" size={14} />
@@ -496,7 +606,14 @@ const App: React.FC = () => {
 
         {/* Sort/Filter Panel */}
         {showFilterPanel && (
-          <SortFilterControl sortField={sortField} setSortField={setSortField} sortDirection={sortDirection} setSortDirection={setSortDirection} filterType={filterType} setFilterType={setFilterType} filterDate={filterDate} setFilterDate={setFilterDate} onClose={() => setShowFilterPanel(false)} />
+          <SortFilterControl 
+            sortField={sortField} setSortField={setSortField} 
+            sortDirection={sortDirection} setSortDirection={setSortDirection} 
+            filterType={filterType} setFilterType={setFilterType} 
+            filterDate={filterDate} setFilterDate={setFilterDate} 
+            filterSize={filterSize} setFilterSize={setFilterSize}
+            onClose={() => setShowFilterPanel(false)} 
+          />
         )}
 
         {/* Views */}
@@ -518,6 +635,14 @@ const App: React.FC = () => {
              <FileList files={displayedFiles} viewMode={viewMode} selectedIds={selectedIds} onSelect={handleSelect} onOpen={handleOpen} sortField={sortField} onContextMenu={handleContextMenu} onDropFile={handleDropMove} />
            )}
         </div>
+        
+        {/* Loading Overlay */}
+        {isProcessing && (
+           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center animate-in fade-in">
+              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <span className="text-slate-200 font-medium">Processing...</span>
+           </div>
+        )}
 
         {/* FAB */}
         {!isTrashView && !showStorage && (
@@ -541,6 +666,7 @@ const App: React.FC = () => {
                  <button onClick={() => handleCopy(false)} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Copy"><Copy size={20} /></button>
                  <button onClick={() => handleCopy(true)} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Cut"><Scissors size={20} /></button>
                  <button onClick={handleDuplicate} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Duplicate"><RefreshCw size={20} /></button>
+                 <button onClick={() => setModal({ type: 'COMPRESS', targetId: undefined })} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Compress"><Archive size={20} /></button>
                  {selectedIds.size === 1 && (
                     <button onClick={() => setModal({ type: 'RENAME', targetId: Array.from(selectedIds)[0] })} className="p-3 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl transition-colors" title="Rename"><RefreshCw size={20} /></button>
                  )}
@@ -562,16 +688,24 @@ const App: React.FC = () => {
           onClose={() => setPreviewState(null)} 
           onOpenExternal={() => { 
              fileSystem.openFile(previewState.file).catch(() => alert("Could not open external app")); 
-             // Optional: Close preview after opening external, or keep it open if it failed. 
-             // We keep it open so user sees the "Open Externally" button in the fallback view if they need to try again.
           }} 
         />
       )}
       {contextMenu && (
-        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} onAction={executeMenuAction} singleFile={selectedIds.size <= 1} isFolder={files.find(f => f.id === contextMenu.fileId)?.type === 'folder'} />
+        <ContextMenu 
+          x={contextMenu.x} 
+          y={contextMenu.y} 
+          onClose={() => setContextMenu(null)} 
+          onAction={executeMenuAction} 
+          singleFile={selectedIds.size <= 1} 
+          isFolder={files.find(f => f.id === contextMenu.fileId)?.type === 'folder'} 
+          fileType={files.find(f => f.id === contextMenu.fileId)?.type}
+          isBookmarked={contextMenu.fileId ? bookmarks.has(contextMenu.fileId) : false}
+        />
       )}
       <InputDialog isOpen={modal.type === 'CREATE_FOLDER'} title="New Folder" placeholder="Folder Name" actionLabel="Create" onClose={() => setModal({ type: null })} onSubmit={handleCreateFolder} />
       <InputDialog isOpen={modal.type === 'RENAME'} title="Rename Item" defaultValue={files.find(f => f.id === modal.targetId)?.name} actionLabel="Rename" onClose={() => setModal({ type: null })} onSubmit={handleRename} />
+      <InputDialog isOpen={modal.type === 'COMPRESS'} title="Archive Name" placeholder="archive.zip" actionLabel="Compress" onClose={() => setModal({ type: null })} onSubmit={handleCompress} />
       <PropertiesDialog isOpen={modal.type === 'PROPERTIES'} onClose={() => setModal({ type: null })} file={files.find(f => f.id === modal.targetId)} />
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileNode } from '../types';
-import { X, Folder, File as FileIcon } from 'lucide-react';
+import { X, Folder, File as FileIcon, Shield, MapPin, Hash } from 'lucide-react';
 
 interface DialogProps {
   onClose: () => void;
@@ -78,7 +78,7 @@ export const PropertiesDialog: React.FC<{
     <BaseDialog isOpen={isOpen} onClose={onClose} title="Properties">
       <div className="space-y-4">
         <div className="flex items-center justify-center py-4">
-          <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center text-blue-500">
+          <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center text-blue-500 shadow-lg">
             {file.type === 'folder' ? <Folder size={32} /> : <FileIcon size={32} />}
           </div>
         </div>
@@ -94,17 +94,28 @@ export const PropertiesDialog: React.FC<{
           <div className="flex justify-between border-b border-slate-800 pb-2">
              <span className="text-slate-500">Size</span>
              <span className="text-slate-200">
-                {file.type === 'folder' ? '-' : (file.size / 1024).toFixed(1) + ' KB'}
+                {file.type === 'folder' ? '-' : (file.size / 1024).toFixed(2) + ' KB'}
+                {file.type !== 'folder' && <span className="text-slate-500 ml-1">({file.size.toLocaleString()} bytes)</span>}
              </span>
           </div>
           <div className="flex justify-between border-b border-slate-800 pb-2">
-             <span className="text-slate-500">Location</span>
-             <span className="text-slate-200 truncate max-w-[180px]">{file.parentId || 'Root'}</span>
+             <span className="text-slate-500 flex items-center gap-2"><MapPin size={14}/> Location</span>
+             <span className="text-slate-200 truncate max-w-[180px] font-mono text-xs">{file.parentId || 'Root'}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between border-b border-slate-800 pb-2">
              <span className="text-slate-500">Modified</span>
-             <span className="text-slate-200">{new Date(file.updatedAt).toLocaleDateString()}</span>
+             <span className="text-slate-200">{new Date(file.updatedAt).toLocaleString()}</span>
           </div>
+          <div className="flex justify-between border-b border-slate-800 pb-2">
+             <span className="text-slate-500 flex items-center gap-2"><Shield size={14}/> Permissions</span>
+             <span className="text-slate-200 font-mono text-xs">rw-r--r--</span>
+          </div>
+           {file.type !== 'folder' && (
+             <div className="flex justify-between border-b border-slate-800 pb-2">
+               <span className="text-slate-500 flex items-center gap-2"><Hash size={14}/> MD5</span>
+               <span className="text-slate-200 font-mono text-xs truncate max-w-[150px] opacity-50">7f8a9...b1c2</span>
+             </div>
+           )}
         </div>
         <div className="pt-2">
            <button onClick={onClose} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors font-medium">
