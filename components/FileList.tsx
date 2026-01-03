@@ -38,7 +38,7 @@ const FileItem: React.FC<{
   isSelectionMode: boolean;
 }> = ({ file, viewMode, isSelected, onSelect, onOpen, onContextMenu, onDropFile, isSelectionMode }) => {
   const Icon = getIconForType(file.type);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Drag & Drop ---
   const handleDragStart = (e: React.DragEvent) => {

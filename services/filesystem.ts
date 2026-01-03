@@ -14,7 +14,7 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext || '')) return 'image';
   if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext || '')) return 'video';
   if (['mp3', 'wav', 'aac', 'flac', 'ogg'].includes(ext || '')) return 'audio';
-  if (['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx', 'json', 'xml', 'js', 'ts', 'css', 'html'].includes(ext || '')) return 'document';
+  if (['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx', 'json', 'xml', 'js', 'ts', 'css', 'html', 'log', 'py', 'java', 'c', 'cpp'].includes(ext || '')) return 'document';
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) return 'archive';
   return 'unknown';
 };
@@ -350,20 +350,63 @@ class AndroidFileSystem {
         contentType: this.getMimeType(file.type, file.name)
       });
     } catch (e: any) {
-      alert('Could not open file: ' + (e.message || e));
+      throw new Error('Could not open file: ' + (e.message || e));
     }
   }
 
   private getMimeType(type: string, name: string): string {
      const ext = name.split('.').pop()?.toLowerCase();
-     if (ext === 'pdf') return 'application/pdf';
-     if (ext === 'txt') return 'text/plain';
-     if (ext === 'html') return 'text/html';
-     if (ext === 'json') return 'application/json';
+     const mimeTypes: Record<string, string> = {
+         'pdf': 'application/pdf',
+         'txt': 'text/plain',
+         'html': 'text/html',
+         'json': 'application/json',
+         'xml': 'text/xml',
+         'js': 'application/javascript',
+         'ts': 'application/x-typescript',
+         'css': 'text/css',
+         'csv': 'text/csv',
+         'md': 'text/markdown',
+         'log': 'text/plain',
+         'py': 'text/x-python',
+         'java': 'text/x-java-source',
+         'c': 'text/x-c',
+         'cpp': 'text/x-c++',
+         'h': 'text/x-c',
+         'jpg': 'image/jpeg',
+         'jpeg': 'image/jpeg',
+         'png': 'image/png',
+         'gif': 'image/gif',
+         'webp': 'image/webp',
+         'mp4': 'video/mp4',
+         'mkv': 'video/x-matroska',
+         'avi': 'video/x-msvideo',
+         'mov': 'video/quicktime',
+         'mp3': 'audio/mpeg',
+         'wav': 'audio/wav',
+         'flac': 'audio/flac',
+         'ogg': 'audio/ogg',
+         'zip': 'application/zip',
+         'rar': 'application/x-rar-compressed',
+         '7z': 'application/x-7z-compressed',
+         'tar': 'application/x-tar',
+         'gz': 'application/gzip',
+         'doc': 'application/msword',
+         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+         'xls': 'application/vnd.ms-excel',
+         'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+         'ppt': 'application/vnd.ms-powerpoint',
+         'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+         'apk': 'application/vnd.android.package-archive'
+     };
      
+     if (ext && mimeTypes[ext]) return mimeTypes[ext];
+     
+     // Fallbacks based on type category
      if (type === 'image') return 'image/*';
      if (type === 'video') return 'video/*';
      if (type === 'audio') return 'audio/*';
+     if (type === 'archive') return 'application/zip';
      
      return '*/*';
   }

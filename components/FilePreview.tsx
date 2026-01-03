@@ -15,9 +15,14 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, url, content, onClose, 
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
+    // If content is provided directly (text files), we are loaded
+    if (content !== undefined) {
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(false);
-  }, [file]);
+  }, [file, content]);
 
   const handleLoad = () => setLoading(false);
   const handleError = () => {
@@ -80,8 +85,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, url, content, onClose, 
        );
     }
 
-    if ((file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.json') || file.name.endsWith('.js') || file.name.endsWith('.css') || file.name.endsWith('.xml') || file.type === 'document') && content !== undefined) {
-       useEffect(() => setLoading(false), []);
+    if (content !== undefined) {
        return (
          <div className="bg-slate-900 border border-slate-700 rounded-lg p-0 overflow-hidden w-full h-full max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-300">
            <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center gap-2">

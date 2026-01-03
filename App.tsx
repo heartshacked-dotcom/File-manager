@@ -198,21 +198,45 @@ const App: React.FC = () => {
       navigateTo(file.id);
     } else {
       try {
+        // 1. Media Preview
         if (['image', 'video', 'audio'].includes(file.type)) {
            const url = await fileSystem.getFileUrl(file.id);
            setPreviewState({ file, url });
-        } else if (file.name.match(/\.(txt|md|json|js|css|xml|html)$/i) || file.type === 'document') {
-           if (file.name.match(/\.(pdf|doc|docx|xls)$/i)) {
-              await fileSystem.openFile(file);
-           } else {
-              const content = await fileSystem.readTextFile(file.id);
-              setPreviewState({ file, content });
+           return;
+        } 
+        
+        // 2. Text/Code Preview
+        // Explicitly check extensions for text/code vs binary docs
+        const isCodeOrText = file.name.match(/\.(txt|md|json|js|jsx|ts|tsx|css|xml|html|log|csv|ini|conf|yml|yaml|py|java|c|cpp|h)$/i);
+        const isBinaryDoc = file.name.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|7z|apk)$/i);
+
+        if (isCodeOrText && !isBinaryDoc) {
+           // Safety: Limit text preview to 2MB to prevent main thread freeze
+           if (file.size > 2 * 1024 * 1024) {
+              if (confirm(`File is too large for preview (${(file.size/1024/1024).toFixed(1)} MB). Open externally?`)) {
+                 await fileSystem.openFile(file);
+              }
+              return;
            }
-        } else {
-           await fileSystem.openFile(file);
-        }
-      } catch (e) {
+
+           const content = await fileSystem.readTextFile(file.id);
+           setPreviewState({ file, content });
+           return;
+        } 
+
+        // 3. Default: Open Externally
         await fileSystem.openFile(file);
+
+      } catch (e: any) {
+        console.error("File open error:", e);
+        // Fallback prompt if internal open logic fails or external app launch fails
+        if (confirm(`Could not open ${file.name}. Try opening with default system app?`)) {
+           try {
+             await fileSystem.openFile(file);
+           } catch (err) {
+             alert("No compatible app found.");
+           }
+        }
       }
     }
   };
@@ -232,9 +256,6 @@ const App: React.FC = () => {
          
          setSelectedIds(prev => {
             const next = new Set(prev);
-            // If dragging range, we usually add. 
-            // Standard OS behavior: Range select resets previous complex multi-selects unless ctrl held?
-            // Simplified: Add range to selection.
             rangeIds.forEach(rid => next.add(rid));
             return next;
          });
@@ -249,16 +270,7 @@ const App: React.FC = () => {
        });
        setLastFocusedId(id);
     } else {
-       // Single select (or start of new selection)
-       // Note: If long press triggered this with multi=true, it falls into previous block.
-       // This block is for cases where we might want to clear others?
-       // Usually in mobile, a long press just adds to selection if mode active.
-       // The FileList handles standard click vs long press logic.
-       // Here we assume "single select" implies clearing others if not modifier key.
-       // But if we are already in selection mode, single click usually acts as toggle.
-       // Handled in FileList logic mainly.
-       
-       // Fallback for direct "select this only"
+       // Single select
        setSelectedIds(new Set([id]));
        setLastFocusedId(id);
     }
@@ -543,7 +555,17 @@ const App: React.FC = () => {
 
       {/* Dialogs and Context Menu */}
       {previewState && (
-        <FilePreview file={previewState.file} url={previewState.url} content={previewState.content} onClose={() => setPreviewState(null)} onOpenExternal={() => { fileSystem.openFile(previewState.file); setPreviewState(null); }} />
+        <FilePreview 
+          file={previewState.file} 
+          url={previewState.url} 
+          content={previewState.content} 
+          onClose={() => setPreviewState(null)} 
+          onOpenExternal={() => { 
+             fileSystem.openFile(previewState.file).catch(() => alert("Could not open external app")); 
+             // Optional: Close preview after opening external, or keep it open if it failed. 
+             // We keep it open so user sees the "Open Externally" button in the fallback view if they need to try again.
+          }} 
+        />
       )}
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} onAction={executeMenuAction} singleFile={selectedIds.size <= 1} isFolder={files.find(f => f.id === contextMenu.fileId)?.type === 'folder'} />
