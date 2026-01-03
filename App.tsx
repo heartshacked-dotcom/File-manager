@@ -208,40 +208,81 @@ const App: React.FC = () => {
   // --- Operations ---
 
   const handleCreateFolder = async (name: string) => {
-    const parentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
-    await fileSystem.createFolder(parentId, name);
-    setModal({ type: null });
-    refreshFiles();
+    try {
+      if (!name || name.trim() === '') return;
+      if (name.includes('/')) {
+        alert("Folder names cannot contain '/'");
+        return;
+      }
+      const parentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
+      await fileSystem.createFolder(parentId, name);
+      setModal({ type: null });
+      refreshFiles();
+    } catch (e: any) {
+      alert("Error creating folder: " + e.message);
+    }
   };
 
   const handleRename = async (newName: string) => {
-    if (modal.targetId) {
+    if (!modal.targetId) return;
+    
+    // Validation
+    if (!newName || newName.trim() === '') {
+      alert("Name cannot be empty");
+      return;
+    }
+    if (newName.includes('/')) {
+      alert("File names cannot contain '/'");
+      return;
+    }
+    
+    // Check if name actually changed
+    const file = files.find(f => f.id === modal.targetId);
+    if (file && file.name === newName) {
+      setModal({ type: null });
+      return;
+    }
+
+    try {
       await fileSystem.rename(modal.targetId, newName);
       setModal({ type: null });
       refreshFiles();
+    } catch (e: any) {
+      console.error("Rename failed", e);
+      alert("Rename failed: " + (e.message || "Unknown error"));
     }
   };
 
   const handleDelete = async () => {
     if (selectedIds.size === 0 && !modal.targetId) return;
-    const ids = modal.targetId ? [modal.targetId] : Array.from(selectedIds);
     
-    if (isTrashView) {
-      if (confirm(`Permanently delete ${ids.length} items?`)) {
-        await fileSystem.deletePermanent(ids);
+    try {
+      const ids = modal.targetId ? [modal.targetId] : Array.from(selectedIds);
+      
+      if (isTrashView) {
+        if (confirm(`Permanently delete ${ids.length} items?`)) {
+          await fileSystem.deletePermanent(ids);
+        }
+      } else {
+        await fileSystem.trash(ids);
       }
-    } else {
-      await fileSystem.trash(ids);
+      refreshFiles();
+      setSelectedIds(new Set());
+      setModal({ type: null });
+    } catch (e: any) {
+      console.error("Delete failed", e);
+      alert("Delete failed: " + (e.message || "Unknown error"));
     }
-    refreshFiles();
-    setSelectedIds(new Set());
-    setModal({ type: null });
   };
 
   const handleEmptyTrash = async () => {
     if (confirm("Empty Recycle Bin? This cannot be undone.")) {
-      await fileSystem.emptyTrash();
-      refreshFiles();
+      try {
+        await fileSystem.emptyTrash();
+        refreshFiles();
+      } catch (e: any) {
+        alert("Failed to empty trash: " + e.message);
+      }
     }
   };
 
@@ -258,20 +299,28 @@ const App: React.FC = () => {
 
   const handlePaste = async () => {
     if (!clipboard) return;
-    const targetId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
-    
-    if (clipboard.mode === 'copy') {
-      await fileSystem.copy(clipboard.sourceIds, targetId);
-    } else {
-      await fileSystem.move(clipboard.sourceIds, targetId);
+    try {
+      const targetId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : 'root';
+      
+      if (clipboard.mode === 'copy') {
+        await fileSystem.copy(clipboard.sourceIds, targetId);
+      } else {
+        await fileSystem.move(clipboard.sourceIds, targetId);
+      }
+      setClipboard(null);
+      refreshFiles();
+    } catch (e: any) {
+      alert("Paste failed: " + e.message);
     }
-    setClipboard(null);
-    refreshFiles();
   };
 
   const handleDropMove = async (sourceId: string, targetFolderId: string) => {
-    await fileSystem.move([sourceId], targetFolderId);
-    refreshFiles();
+    try {
+      await fileSystem.move([sourceId], targetFolderId);
+      refreshFiles();
+    } catch (e: any) {
+      alert("Move failed: " + e.message);
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent, file: FileNode) => {

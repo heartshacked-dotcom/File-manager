@@ -189,11 +189,19 @@ class AndroidFileSystem {
     const parentPath = id.substring(0, id.lastIndexOf('/'));
     const newPath = parentPath ? `${parentPath}/${newName}` : newName;
     
-    await Filesystem.rename({
-      from: id,
-      to: newPath,
-      directory: Directory.ExternalStorage
-    });
+    // Debug logging
+    console.debug(`[Nova] Renaming file. From: ${id}, To: ${newPath}`);
+
+    try {
+      await Filesystem.rename({
+        from: id,
+        to: newPath,
+        directory: Directory.ExternalStorage
+      });
+    } catch (e: any) {
+      console.error("[Nova] Rename Error:", e);
+      throw new Error(`Failed to rename file. ${e.message || ''}`);
+    }
   }
 
   async trash(ids: string[]): Promise<void> {
