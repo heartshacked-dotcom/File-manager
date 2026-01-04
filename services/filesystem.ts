@@ -1,6 +1,5 @@
 
 import { FileNode } from '../types';
-import { TOTAL_STORAGE } from '../constants';
 import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Capacitor } from '@capacitor/core';
@@ -288,12 +287,13 @@ class AndroidFileSystem {
     }
 
     if (!parentId || parentId === 'root') {
-        // Calculate/Simulate used space
+        // Calculate real used space using Web API
         const { used, total } = await this.calculateRealTimeStorage();
         
         return [
             { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: used, capacity: total, updatedAt: Date.now() },
-            { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 14 * 1024*1024*1024, capacity: 64 * 1024*1024*1024, updatedAt: Date.now() },
+            // SD Card capacity is not easily available via standard Web APIs, marked as 0 for "Unknown" to avoid dummy data
+            { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, capacity: 0, updatedAt: Date.now() },
             { id: 'category_image', parentId: 'root', name: 'Images', type: 'folder', size: 0, updatedAt: 0 },
             { id: 'category_video', parentId: 'root', name: 'Videos', type: 'folder', size: 0, updatedAt: 0 },
             { id: 'category_audio', parentId: 'root', name: 'Audio', type: 'folder', size: 0, updatedAt: 0 },
@@ -337,21 +337,26 @@ class AndroidFileSystem {
     } catch (e) { return []; }
   }
 
-  // Helper to approximate storage usage since native StatFS isn't exposed directly in basic plugin
+  // Use the Web Storage API to get an estimate of available space
   private async calculateRealTimeStorage() {
-      // In a real app with proper native plugins, this would call StatFS.
-      // Here we simulate checking a few key folders to give a semi-realistic number that can fluctuate.
-      let totalUsed = 12 * 1024 * 1024 * 1024; // Base 12GB
-      
       try {
-         const dcim = await Filesystem.readdir({ path: 'DCIM', directory: Directory.ExternalStorage });
-         totalUsed += dcim.files.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
-         
-         const down = await Filesystem.readdir({ path: 'Download', directory: Directory.ExternalStorage });
-         totalUsed += down.files.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
-      } catch (e) {}
+        if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            return { 
+                used: estimate.usage || 0, 
+                total: estimate.quota || 0 
+            };
+        }
+      } catch (e) {
+        console.error("Failed to get storage estimate", e);
+      }
 
-      return { used: totalUsed, total: TOTAL_STORAGE };
+      return { used: 0, total: 0 };
+  }
+
+  async getStorageUsage() {
+     const est = await this.calculateRealTimeStorage();
+     return { used: est.used, total: est.total, breakdown: {} };
   }
 
   async stat(id: string): Promise<FileNode | undefined> {
@@ -481,6 +486,9 @@ class AndroidFileSystem {
                }
             }
 
+            if (f.type === 'directory' && !f.name.startsWith('.') && f.type !== 'directory') {
+               // Fix logic for deep search if necessary, currently shallow focused on main folders
+            }
             if (f.type === 'directory' && !f.name.startsWith('.')) {
                if (fullPath.split('/').length < 6) {
                  queue.push(fullPath);
@@ -498,10 +506,6 @@ class AndroidFileSystem {
        this.searchController.abort();
        this.searchController = null;
     }
-  }
-
-  getStorageUsage() {
-    return { used: 15 * 1024*1024*1024, total: TOTAL_STORAGE, breakdown: {} };
   }
 
   // --- Recursive Analysis Logic ---

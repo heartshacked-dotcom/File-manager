@@ -42,8 +42,14 @@ const StorageCard: React.FC<{
   total: number;
   onClick: () => void;
 }> = ({ name, type, used, total, onClick }) => {
-  const percent = Math.min(100, Math.round((used / total) * 100));
-  const free = total - used;
+  // If total is 0 or negative, we treat it as unknown/unbounded or just invalid for percent calc
+  const hasTotal = total > 0;
+  const percent = hasTotal ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  const free = hasTotal ? Math.max(0, total - used) : 0;
+  
+  const displayTotal = hasTotal ? formatSize(total) : 'Unknown';
+  const displayFree = hasTotal ? formatSize(free) : 'Unknown';
+  const displayPercent = hasTotal ? `${percent}%` : '--';
   
   return (
     <button 
@@ -60,19 +66,23 @@ const StorageCard: React.FC<{
              {type === 'internal' ? <Smartphone size={24} /> : <HardDrive size={24} />}
            </div>
            <div className="text-right">
-             <div className="text-2xl font-bold">{percent}%</div>
+             <div className="text-2xl font-bold">{displayPercent}</div>
              <div className="text-xs text-white/70 font-medium">Used</div>
            </div>
         </div>
         
         <h3 className="font-bold text-lg mb-1">{name}</h3>
-        <p className="text-sm text-white/80 mb-4">{formatSize(free)} free of {formatSize(total)}</p>
+        <p className="text-sm text-white/80 mb-4">
+           {hasTotal ? `${displayFree} free of ${displayTotal}` : `${formatSize(used)} used`}
+        </p>
         
         <div className="h-1.5 w-full bg-black/20 rounded-full overflow-hidden">
-           <div 
-             className="h-full bg-white/90 rounded-full transition-all duration-1000 ease-out" 
-             style={{ width: `${percent}%` }} 
-           />
+           {hasTotal && (
+             <div 
+               className="h-full bg-white/90 rounded-full transition-all duration-1000 ease-out" 
+               style={{ width: `${percent}%` }} 
+             />
+           )}
         </div>
       </div>
 
@@ -400,7 +410,7 @@ const FileList: React.FC<FileListProps> = React.memo(({
                      name="Internal Storage" 
                      type="internal" 
                      used={internalStorage.size} 
-                     total={internalStorage.capacity || 1} 
+                     total={internalStorage.capacity || 0} 
                      onClick={() => onOpen(internalStorage)}
                    />
                 </div>
@@ -411,7 +421,7 @@ const FileList: React.FC<FileListProps> = React.memo(({
                      name="SD Card" 
                      type="sd" 
                      used={sdCard.size} 
-                     total={sdCard.capacity || 1} 
+                     total={sdCard.capacity || 0} 
                      onClick={() => onOpen(sdCard)}
                    />
                 </div>
