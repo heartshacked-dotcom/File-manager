@@ -518,7 +518,7 @@ const AppContent: React.FC = () => {
                </button>
             </div>
          ) : (
-           <div className="flex-1 flex overflow-hidden pt-[calc(env(safe-area-inset-top))] gap-2 relative">
+           <div className="flex-1 flex overflow-hidden pt-[calc(env(safe-area-inset-top))] pb-[calc(env(safe-area-inset-bottom))] gap-2 relative">
               <div className="flex-1 min-w-0 h-full w-full">
                  <FileBrowserPane 
                     paneState={filePane}

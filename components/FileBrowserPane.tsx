@@ -111,7 +111,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
 
   return (
     <div 
-      className={`flex flex-col h-full bg-white dark:bg-slate-950 border-2 rounded-xl overflow-hidden transition-colors duration-200 border-slate-200 dark:border-slate-800 ${className}`}
+      className={`flex flex-col h-full bg-white dark:bg-slate-950 transition-colors duration-200 ${className}`}
     >
       {/* Pane Toolbar */}
       <div className="flex items-center p-2 border-b gap-1 flex-shrink-0 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">

@@ -48,9 +48,9 @@ export interface SearchOptions {
 const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
   if (isDir) return 'folder';
   const ext = filename.split('.').pop()?.toLowerCase();
-  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext || '')) return 'image';
-  if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext || '')) return 'video';
-  if (['mp3', 'wav', 'aac', 'flac', 'ogg'].includes(ext || '')) return 'audio';
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic'].includes(ext || '')) return 'image';
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm', '3gp'].includes(ext || '')) return 'video';
+  if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext || '')) return 'audio';
   if (['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx', 'json', 'xml', 'js', 'ts', 'css', 'html', 'log', 'py', 'java', 'c', 'cpp'].includes(ext || '')) return 'document';
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) return 'archive';
   return 'unknown';
@@ -178,9 +178,9 @@ class AndroidFileSystem {
      }
      
      return all
-        .filter(f => !f.name.startsWith('.'))
+        .filter(f => !f.name.startsWith('.') && f.type !== 'folder')
         .sort((a,b) => b.updatedAt - a.updatedAt)
-        .slice(0, 50);
+        .slice(0, 10);
   }
 
   async getTrashFiles(): Promise<FileNode[]> {
@@ -198,6 +198,11 @@ class AndroidFileSystem {
          originalPath: entry.originalPath
        } as FileNode));
      } catch { return []; }
+  }
+
+  // --- Category / Virtual Folders ---
+  async getCategoryFiles(type: FileNode['type']): Promise<FileNode[]> {
+    return this.search({ query: '', type });
   }
 
   async trash(ids: string[]): Promise<void> {
@@ -271,15 +276,29 @@ class AndroidFileSystem {
   }
 
   async readdir(parentId: string | null, showHidden: boolean = false): Promise<FileNode[]> {
+    // Virtual Locations
     if (parentId === 'favorites') return this.getFavoriteFiles();
     if (parentId === 'recent') return this.getRecentFiles();
     if (parentId === 'trash') return this.getTrashFiles();
+    
+    // Virtual Categories
+    if (parentId?.startsWith('category_')) {
+       const type = parentId.replace('category_', '') as FileNode['type'];
+       return this.getCategoryFiles(type);
+    }
 
     if (!parentId || parentId === 'root') {
-        const { used, total } = this.getStorageUsage();
+        // Calculate/Simulate used space
+        const { used, total } = await this.calculateRealTimeStorage();
+        
         return [
             { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: used, capacity: total, updatedAt: Date.now() },
             { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 14 * 1024*1024*1024, capacity: 64 * 1024*1024*1024, updatedAt: Date.now() },
+            { id: 'category_image', parentId: 'root', name: 'Images', type: 'folder', size: 0, updatedAt: 0 },
+            { id: 'category_video', parentId: 'root', name: 'Videos', type: 'folder', size: 0, updatedAt: 0 },
+            { id: 'category_audio', parentId: 'root', name: 'Audio', type: 'folder', size: 0, updatedAt: 0 },
+            { id: 'category_document', parentId: 'root', name: 'Documents', type: 'folder', size: 0, updatedAt: 0 },
+            { id: 'category_archive', parentId: 'root', name: 'Archives', type: 'folder', size: 0, updatedAt: 0 },
             { id: 'downloads_shortcut', parentId: 'root', name: 'Downloads', type: 'folder', size: 0, updatedAt: Date.now() },
             { id: 'trash', parentId: 'root', name: 'Recycle Bin', type: 'folder', size: 0, updatedAt: Date.now(), isTrash: true },
             { id: VAULT_FOLDER, parentId: 'root', name: 'Secure Vault', type: 'folder', size: 0, updatedAt: Date.now(), isProtected: true }
@@ -318,10 +337,32 @@ class AndroidFileSystem {
     } catch (e) { return []; }
   }
 
+  // Helper to approximate storage usage since native StatFS isn't exposed directly in basic plugin
+  private async calculateRealTimeStorage() {
+      // In a real app with proper native plugins, this would call StatFS.
+      // Here we simulate checking a few key folders to give a semi-realistic number that can fluctuate.
+      let totalUsed = 12 * 1024 * 1024 * 1024; // Base 12GB
+      
+      try {
+         const dcim = await Filesystem.readdir({ path: 'DCIM', directory: Directory.ExternalStorage });
+         totalUsed += dcim.files.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
+         
+         const down = await Filesystem.readdir({ path: 'Download', directory: Directory.ExternalStorage });
+         totalUsed += down.files.reduce((acc, f) => acc + (Number(f.size) || 0), 0);
+      } catch (e) {}
+
+      return { used: totalUsed, total: TOTAL_STORAGE };
+  }
+
   async stat(id: string): Promise<FileNode | undefined> {
     try {
+      // Virtual Stats
       if (id === 'root_internal') return { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'root_sd') return { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 };
+      if (id.startsWith('category_')) {
+          const name = id.replace('category_', '');
+          return { id, parentId: 'root', name: name.charAt(0).toUpperCase() + name.slice(1), type: 'folder', size: 0, updatedAt: 0 };
+      }
       if (id === 'trash') return { id: 'trash', parentId: 'root', name: 'Recycle Bin', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'recent') return { id: 'recent', parentId: 'root', name: 'Recent Files', type: 'folder', size: 0, updatedAt: 0 };
       if (id === 'favorites') return { id: 'favorites', parentId: 'root', name: 'Favorites', type: 'folder', size: 0, updatedAt: 0 };
@@ -345,9 +386,14 @@ class AndroidFileSystem {
   }
 
   async getPathNodes(id: string): Promise<FileNode[]> {
+    // Handle Virtual Paths for Breadcrumbs
     if (id === 'trash') return [{ id: 'trash', name: 'Recycle Bin', type: 'folder', parentId: 'root', size: 0, updatedAt: 0 }];
     if (id === 'recent') return [{ id: 'recent', name: 'Recent Files', type: 'folder', parentId: 'root', size: 0, updatedAt: 0 }];
     if (id === 'favorites') return [{ id: 'favorites', name: 'Favorites', type: 'folder', parentId: 'root', size: 0, updatedAt: 0 }];
+    if (id.startsWith('category_')) {
+        const name = id.replace('category_', '');
+        return [{ id, name: name.charAt(0).toUpperCase() + name.slice(1), type: 'folder', parentId: 'root', size: 0, updatedAt: 0 }];
+    }
     if (id === 'root') return [];
     if (id === 'root_internal') return [{ id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: 0, updatedAt: 0 }];
     if (id === 'root_sd') return [{ id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, updatedAt: 0 }];
@@ -408,7 +454,9 @@ class AndroidFileSystem {
             if (signal.aborted) break;
             const fullPath = currentPath ? `${currentPath}/${f.name}` : f.name;
             const type = getFileType(f.name, f.type === 'directory');
-            const isMatch = f.name.toLowerCase().includes(queryLower);
+            
+            // If query is empty, we are filtering by type (Category View)
+            const isMatch = queryLower === '' ? true : f.name.toLowerCase().includes(queryLower);
             
             if (isMatch) {
                let passesFilter = true;
@@ -417,6 +465,9 @@ class AndroidFileSystem {
                if (options.minSize && f.size < options.minSize) passesFilter = false;
                if (options.maxSize && f.size > options.maxSize) passesFilter = false;
                if (options.minDate && f.mtime < options.minDate) passesFilter = false;
+
+               // For category view, hide folders
+               if (options.type && options.type !== 'all' && f.type === 'directory') passesFilter = false;
 
                if (passesFilter) {
                  results.push({
