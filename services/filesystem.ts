@@ -2,13 +2,24 @@
 import { FileNode } from '../types';
 import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { SecurityService } from './security';
 
 const TRASH_FOLDER = '.nova_trash';
 const TRASH_INDEX = 'trash_index.json';
 const VAULT_FOLDER = 'Secure Vault';
+
+// --- Native Plugin Definition ---
+// This interface matches the native Android code:
+// StatFs stat = new StatFs(Environment.getExternalStorageDirectory().getPath());
+// long total = stat.getTotalBytes();
+// long free = stat.getAvailableBytes();
+interface StorageCapacityPlugin {
+  getStorageInfo(): Promise<{ total: number; free: number; used: number }>;
+}
+
+const StorageCapacity = registerPlugin<StorageCapacityPlugin>('StorageCapacity');
 
 // Enum for internal permission tracking
 export enum PermissionStatus {
@@ -287,7 +298,7 @@ class AndroidFileSystem {
     }
 
     if (!parentId || parentId === 'root') {
-        // Calculate real used space using Web API
+        // Calculate real used space
         const { used, total } = await this.calculateRealTimeStorage();
         
         return [
@@ -337,8 +348,22 @@ class AndroidFileSystem {
     } catch (e) { return []; }
   }
 
-  // Use the Web Storage API to get an estimate of available space
+  // Calculate storage using Native Plugin (if available) or Web API fallback
   private async calculateRealTimeStorage() {
+      // 1. Try Native Plugin (for StatFs)
+      try {
+        const info = await StorageCapacity.getStorageInfo();
+        if (info && info.total > 0) {
+           return {
+             used: info.used || (info.total - info.free),
+             total: info.total
+           };
+        }
+      } catch (e) {
+        // Plugin not installed or platform is not Android
+      }
+
+      // 2. Fallback to Web API
       try {
         if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
             const estimate = await navigator.storage.estimate();

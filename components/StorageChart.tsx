@@ -1,18 +1,16 @@
+
 import React from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { MOCK_STORAGE_BREAKDOWN } from '../constants';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface StorageChartProps {
   used: number;
   total: number;
+  breakdown?: { name: string; value: number; color: string }[];
 }
 
-const StorageChart: React.FC<StorageChartProps> = ({ used, total }) => {
-  const percentage = Math.round((used / total) * 100);
-
-  // Convert breakdown to Recharts format
-  // In a real app we'd use real data, here we use the mock constant for better visuals if empty
-  const data = MOCK_STORAGE_BREAKDOWN;
+const StorageChart: React.FC<StorageChartProps> = ({ used, total, breakdown = [] }) => {
+  const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
+  const data = breakdown;
 
   return (
     <div className="bg-slate-900 rounded-xl p-6 shadow-lg border border-slate-800">
