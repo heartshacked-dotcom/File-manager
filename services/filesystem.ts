@@ -84,16 +84,16 @@ class AndroidFileSystem {
       if (this.accessMode === PermissionStatus.SCOPED && this.safUri) {
         return PermissionStatus.SCOPED;
       }
+      
       const status = await Filesystem.checkPermissions();
-      if (status.publicStorage !== 'granted') {
-         const request = await Filesystem.requestPermissions();
-         if (request.publicStorage !== 'granted') {
-            return PermissionStatus.DENIED;
-         }
-      }
-      if (this.accessMode === PermissionStatus.GRANTED) {
+      
+      // Strict check: if publicStorage is NOT granted, we return DENIED.
+      // We do not rely on local storage accessMode 'GRANTED' state if the system says no.
+      if (status.publicStorage === 'granted') {
+         this.accessMode = PermissionStatus.GRANTED;
          return PermissionStatus.GRANTED;
       }
+
       return PermissionStatus.DENIED;
     } catch (e) {
       return PermissionStatus.DENIED;
@@ -101,7 +101,17 @@ class AndroidFileSystem {
   }
 
   async requestFullAccess(): Promise<boolean> {
-    return true; 
+    try {
+      const res = await Filesystem.requestPermissions();
+      if (res.publicStorage === 'granted') {
+         this.accessMode = PermissionStatus.GRANTED;
+         localStorage.setItem('nova_access_mode', PermissionStatus.GRANTED);
+         return true;
+      }
+    } catch (e) {
+      console.error("Failed to request permissions", e);
+    }
+    return false; 
   }
 
   async confirmFullAccess(): Promise<boolean> {

@@ -200,8 +200,11 @@ const AppContent: React.FC = () => {
   };
 
   const handleGrantFull = async () => {
-     const launched = await fileSystem.requestFullAccess();
-     return launched;
+     const success = await fileSystem.requestFullAccess();
+     if (success) {
+        setPermStatus(PermissionStatus.GRANTED);
+     }
+     return success;
   };
 
   const handleGrantScoped = async () => {
