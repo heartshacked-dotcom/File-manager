@@ -6,8 +6,8 @@ import Breadcrumbs from './Breadcrumbs';
 import SortFilterControl from './SortFilterControl';
 import ViewOptionsControl from './ViewOptionsControl';
 import { 
-  ChevronLeft, Search, Filter, 
-  Trash2, Menu, LayoutGrid, ArrowUp, Grid, List, AlignJustify
+  Search, Filter, 
+  Trash2, Menu, LayoutGrid, Grid, List, AlignJustify
 } from 'lucide-react';
 import { useFilePane } from '../hooks/useFilePane';
 import { Loader2 } from 'lucide-react';
@@ -40,7 +40,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
     currentPath, files, selectedIds, setSelectedIds, lastFocusedId, setLastFocusedId,
     viewMode, setViewMode, sortField, setSortField, sortDirection, setSortDirection,
     searchQuery, setSearchQuery, filterType, setFilterType, showHidden, setShowHidden,
-    canGoBack, goBack, navigateTo, navigateUp, refreshFiles
+    navigateTo, refreshFiles
   } = paneState;
 
   // --- Pull to Refresh State ---
@@ -135,22 +135,6 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
                 </button>
               )}
               
-              <div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-xl p-0.5">
-                 <button 
-                   onClick={goBack} 
-                   disabled={!canGoBack} 
-                   className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition-all"
-                 >
-                    <ChevronLeft size={18} />
-                 </button>
-                 <button 
-                   onClick={navigateUp} 
-                   className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm transition-all"
-                 >
-                    <ArrowUp size={18} />
-                 </button>
-              </div>
-
               {/* Breadcrumbs Area */}
               <div className="flex-1 min-w-0 mx-1">
                  <Breadcrumbs path={currentPath} onNavigate={navigateTo} onNavigateRoot={() => navigateTo('root')} />
