@@ -88,7 +88,6 @@ interface FileListProps {
 }
 
 // --- Dashboard Components ---
-// (Unchanged StorageCard, CategoryButton, QuickAction, RecentFileItem...)
 
 const StorageCard: React.FC<{
   name: string;
@@ -104,14 +103,14 @@ const StorageCard: React.FC<{
   return (
     <button 
       onClick={onClick}
-      className={`relative overflow-hidden rounded-3xl p-5 text-left transition-transform active:scale-95 shadow-xl ${
+      className={`relative overflow-hidden rounded-3xl p-5 text-left transition-transform active:scale-95 shadow-xl w-full min-h-[11rem] flex flex-col justify-between ${
         type === 'internal' 
           ? 'bg-gradient-to-br from-blue-600 to-indigo-600 shadow-blue-500/30' 
           : 'bg-gradient-to-br from-violet-600 to-fuchsia-600 shadow-violet-500/30'
       }`}
     >
-      <div className="relative z-10 text-white">
-        <div className="flex items-start justify-between mb-6">
+      <div className="relative z-10 text-white flex flex-col h-full justify-between w-full">
+        <div className="flex items-start justify-between mb-4">
            <div className="p-3 bg-white/20 backdrop-blur-md rounded-2xl">
              {type === 'internal' ? <Smartphone size={24} /> : <HardDrive size={24} />}
            </div>
@@ -121,18 +120,20 @@ const StorageCard: React.FC<{
            </div>
         </div>
         
-        <h3 className="font-bold text-lg mb-1">{name}</h3>
-        <p className="text-sm text-white/80 mb-4">
-           {hasTotal ? `${formatSize(free)} free of ${formatSize(total)}` : `${formatSize(used)} used`}
-        </p>
-        
-        <div className="h-1.5 w-full bg-black/20 rounded-full overflow-hidden">
-           {hasTotal && (
-             <div 
-               className="h-full bg-white/90 rounded-full transition-all duration-1000 ease-out" 
-               style={{ width: `${percent}%` }} 
-             />
-           )}
+        <div className="w-full">
+          <h3 className="font-bold text-lg mb-1">{name}</h3>
+          <p className="text-sm text-white/80 mb-3">
+             {hasTotal ? `${formatSize(free)} free of ${formatSize(total)}` : `${formatSize(used)} used`}
+          </p>
+          
+          <div className="h-1.5 w-full bg-black/20 rounded-full overflow-hidden">
+             {hasTotal && (
+               <div 
+                 className="h-full bg-white/90 rounded-full transition-all duration-1000 ease-out" 
+                 style={{ width: `${percent}%` }} 
+               />
+             )}
+          </div>
         </div>
       </div>
       <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
@@ -148,11 +149,11 @@ const CategoryButton: React.FC<{
   bgClass: string;
   onClick: () => void;
 }> = ({ icon, label, colorClass, bgClass, onClick }) => (
-  <button onClick={onClick} className="flex flex-col items-center gap-2 group">
-    <div className={`w-14 h-14 ${bgClass} ${colorClass} rounded-2xl flex items-center justify-center transition-transform group-active:scale-90 shadow-sm`}>
-      {React.cloneElement(icon as React.ReactElement<any>, { size: 24, strokeWidth: 2 })}
+  <button onClick={onClick} className="flex flex-col items-center gap-2 group w-full">
+    <div className={`w-full aspect-square max-w-[4.5rem] ${bgClass} ${colorClass} rounded-2xl flex items-center justify-center transition-transform group-active:scale-95 shadow-sm`}>
+      {React.cloneElement(icon as React.ReactElement<any>, { size: 26, strokeWidth: 2 })}
     </div>
-    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{label}</span>
+    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate w-full text-center">{label}</span>
   </button>
 );
 
@@ -160,8 +161,8 @@ const RecentFileItem: React.FC<{ file: FileNode, onClick: () => void }> = ({ fil
   const Icon = getFileIcon(file.name, file.type);
   const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
   return (
-    <button onClick={onClick} className="flex items-center gap-3 p-3 w-full bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group">
-       <div className={`p-2.5 rounded-lg transition-colors ${styles.bg} ${styles.text}`}>
+    <button onClick={onClick} className="flex items-center gap-3 p-3 w-full bg-transparent hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl transition-colors text-left group">
+       <div className={`p-2.5 rounded-lg transition-colors flex-shrink-0 ${styles.bg} ${styles.text}`}>
           <Icon size={20} strokeWidth={1.5} />
        </div>
        <div className="flex-1 min-w-0">
@@ -383,6 +384,10 @@ const FileList: React.FC<FileListProps> = React.memo(({
   if (isRootScreen) {
      const internalStorage = files.find(f => f.id === 'root_internal');
      const sdCard = files.find(f => f.id === 'root_sd');
+     
+     // SD Card Visibility Check: Only show if capacity > 0 (Proxy for detection)
+     const showSdCard = sdCard && (sdCard.capacity || 0) > 0;
+
      const downloads = files.find(f => f.id === 'downloads_shortcut');
      const trash = files.find(f => f.id === 'trash');
      const vault = files.find(f => f.name === 'Secure Vault');
@@ -393,33 +398,53 @@ const FileList: React.FC<FileListProps> = React.memo(({
      const catArc = files.find(f => f.id === 'category_archive');
 
      return (
-        <div className="p-4 space-y-8 pb-20">
-           <div className="flex gap-4 overflow-x-auto no-scrollbar pb-4 snap-x">
-              {internalStorage && (
-                <div className="min-w-[85%] sm:min-w-[320px] snap-center">
-                   <StorageCard name="Internal Storage" type="internal" used={internalStorage.size} total={internalStorage.capacity || 0} onClick={() => onOpen(internalStorage)} />
-                </div>
-              )}
-              {sdCard && (
-                <div className="min-w-[85%] sm:min-w-[320px] snap-center">
-                   <StorageCard name="SD Card" type="sd" used={sdCard.size} total={sdCard.capacity || 0} onClick={() => onOpen(sdCard)} />
-                </div>
-              )}
+        <div className="pt-2 pb-32 space-y-6">
+           
+           {/* Storage Cards - Improved Visibility and Layout */}
+           <div className="w-full overflow-x-auto no-scrollbar snap-x py-2">
+             <div className={`flex gap-4 px-4 ${showSdCard ? 'min-w-max' : 'w-full'}`}>
+                {internalStorage && (
+                  <div className={`${showSdCard ? 'w-[85vw] sm:w-[320px] flex-shrink-0' : 'w-full'} snap-center`}>
+                     <StorageCard 
+                        name="Internal" 
+                        type="internal" 
+                        used={internalStorage.size} 
+                        total={internalStorage.capacity || 0} 
+                        onClick={() => onOpen(internalStorage)} 
+                     />
+                  </div>
+                )}
+                {showSdCard && (
+                  <div className="w-[85vw] sm:w-[320px] flex-shrink-0 snap-center">
+                     <StorageCard 
+                        name="SD Card" 
+                        type="sd" 
+                        used={sdCard!.size} 
+                        total={sdCard!.capacity || 0} 
+                        onClick={() => onOpen(sdCard!)} 
+                     />
+                  </div>
+                )}
+             </div>
            </div>
-           <div className="space-y-3">
+
+           {/* Categories */}
+           <div className="px-4 space-y-3">
               <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1">Categories</h3>
-              <div className="grid grid-cols-4 gap-x-2 gap-y-4">
+              <div className="grid grid-cols-4 gap-3">
                  <CategoryButton icon={<Image/>} label="Images" bgClass="bg-orange-100 dark:bg-orange-900/30" colorClass="text-orange-600 dark:text-orange-400" onClick={() => catImg && onOpen(catImg)} />
                  <CategoryButton icon={<Video/>} label="Videos" bgClass="bg-red-100 dark:bg-red-900/30" colorClass="text-red-600 dark:text-red-400" onClick={() => catVid && onOpen(catVid)} />
                  <CategoryButton icon={<Music/>} label="Audio" bgClass="bg-violet-100 dark:bg-violet-900/30" colorClass="text-violet-600 dark:text-violet-400" onClick={() => catAud && onOpen(catAud)} />
                  <CategoryButton icon={<FileText/>} label="Docs" bgClass="bg-blue-100 dark:bg-blue-900/30" colorClass="text-blue-600 dark:text-blue-400" onClick={() => catDoc && onOpen(catDoc)} />
-                 <CategoryButton icon={<Download/>} label="Down..." bgClass="bg-green-100 dark:bg-green-900/30" colorClass="text-green-600 dark:text-green-400" onClick={() => downloads && onOpen(downloads)} />
+                 <CategoryButton icon={<Download/>} label="Downloads" bgClass="bg-green-100 dark:bg-green-900/30" colorClass="text-green-600 dark:text-green-400" onClick={() => downloads && onOpen(downloads)} />
                  <CategoryButton icon={<Archive/>} label="Zip" bgClass="bg-yellow-100 dark:bg-yellow-900/30" colorClass="text-yellow-600 dark:text-yellow-400" onClick={() => catArc && onOpen(catArc)} />
                  <CategoryButton icon={<Trash2/>} label="Bin" bgClass="bg-slate-100 dark:bg-slate-800" colorClass="text-slate-600 dark:text-slate-400" onClick={() => trash && onOpen(trash)} />
                  <CategoryButton icon={<Shield/>} label="Vault" bgClass="bg-amber-100 dark:bg-amber-900/30" colorClass="text-amber-600 dark:text-amber-400" onClick={() => vault && onOpen(vault)} />
               </div>
            </div>
-           <div className="space-y-3">
+
+           {/* Recent Files */}
+           <div className="px-4 space-y-3">
              <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Recent Files</h3>
                 <button onClick={() => onOpen({ id: 'recent', name: 'Recent', type: 'folder' } as FileNode)} className="text-xs text-blue-500 font-bold">View All</button>
@@ -445,7 +470,7 @@ const FileList: React.FC<FileListProps> = React.memo(({
   const config = getViewConfig(viewMode);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full pb-32">
       {/* Detail Header */}
       {config.type === 'DETAIL' && (
          <div className={`grid grid-cols-[auto_1fr_auto_auto] gap-4 items-center ${config.padding} text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur z-10`}>
