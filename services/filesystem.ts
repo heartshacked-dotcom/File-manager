@@ -62,7 +62,7 @@ const getFileType = (filename: string, isDir: boolean): FileNode['type'] => {
   if (['mp4', 'mkv', 'avi', 'mov', 'webm', '3gp'].includes(ext || '')) return 'video';
   if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext || '')) return 'audio';
   if (['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx', 'json', 'xml', 'js', 'ts', 'css', 'html', 'log', 'py', 'java', 'c', 'cpp'].includes(ext || '')) return 'document';
-  if (['zip', 'rar', '7z', 'tar', 'gz', 'apk'].includes(ext || '')) return 'archive';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) return 'archive';
   return 'unknown';
 };
 
@@ -303,6 +303,7 @@ class AndroidFileSystem {
         
         return [
             { id: 'root_internal', parentId: 'root', name: 'Internal Storage', type: 'folder', size: used, capacity: total, updatedAt: Date.now() },
+            // SD Card capacity is not easily available via standard Web APIs, marked as 0 for "Unknown" to avoid dummy data
             { id: 'root_sd', parentId: 'root', name: 'SD Card', type: 'folder', size: 0, capacity: 0, updatedAt: Date.now() },
             { id: 'category_image', parentId: 'root', name: 'Images', type: 'folder', size: 0, updatedAt: 0 },
             { id: 'category_video', parentId: 'root', name: 'Videos', type: 'folder', size: 0, updatedAt: 0 },
@@ -727,16 +728,6 @@ class AndroidFileSystem {
   async getFileUrl(id: string): Promise<string> {
     const uriResult = await Filesystem.getUri({ path: id, directory: Directory.ExternalStorage });
     return Capacitor.convertFileSrc(uriResult.uri);
-  }
-
-  async getThumbnailUrl(id: string): Promise<string | undefined> {
-    // Return a valid webview URL for images to use in <img> tags
-    try {
-        const uriResult = await Filesystem.getUri({ path: id, directory: Directory.ExternalStorage });
-        return Capacitor.convertFileSrc(uriResult.uri);
-    } catch {
-        return undefined;
-    }
   }
 
   async readTextFile(id: string): Promise<string> {

@@ -188,6 +188,9 @@ const FileItem: React.FC<{
   const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Check if we should attempt to render a thumbnail
+  const supportsThumbnail = file.type === 'image' || file.type === 'video' || file.type === 'audio' || file.name.endsWith('.apk');
+
   // Drag & Drop
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({ id: file.id, name: file.name }));
@@ -245,12 +248,18 @@ const FileItem: React.FC<{
         {isSelected && <div className="absolute top-1 right-1 z-10 text-blue-600 dark:text-blue-400"><CheckCircle2 size={16} fill="currentColor" className="text-white dark:text-slate-900" /></div>}
         
         {/* Thumbnail or Icon Container */}
-        {file.type === 'image' ? (
-           <div className={`w-full aspect-square mb-2 rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-slate-800`}>
+        {supportsThumbnail ? (
+           <div className={`w-full aspect-square mb-2 rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-slate-800 relative`}>
               <FileThumbnail 
                 file={file} 
                 fallbackIcon={<div className={`w-full h-full flex items-center justify-center ${styles.bg} ${styles.text}`}><Icon size={config.iconSize} /></div>} 
               />
+              {/* Type Badge for non-images to distinguish from pure images */}
+              {file.type !== 'image' && (
+                <div className="absolute bottom-1 right-1 bg-black/50 backdrop-blur rounded-full p-1 text-white">
+                  <Icon size={10} />
+                </div>
+              )}
            </div>
         ) : (
            <div className={`mb-2 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text} ${config.padding}`}>
@@ -292,7 +301,7 @@ const FileItem: React.FC<{
        >
           <div className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
              {isSelected ? <CheckCircle2 size={config.iconSize} /> : (
-                file.type === 'image' ? (
+                supportsThumbnail ? (
                    <div className="w-8 h-8 rounded overflow-hidden">
                       <FileThumbnail file={file} fallbackIcon={<Icon size={config.iconSize} className={styles.text} />} />
                    </div>
@@ -329,8 +338,8 @@ const FileItem: React.FC<{
           : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800'
       }`}
     >
-       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${file.type !== 'image' ? styles.bg + ' ' + styles.text : 'bg-slate-100 dark:bg-slate-800'}`} style={{ width: config.iconSize + 16, height: config.iconSize + 16, padding: 0, overflow: 'hidden' }}>
-          {file.type === 'image' ? (
+       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${!supportsThumbnail ? styles.bg + ' ' + styles.text : 'bg-slate-100 dark:bg-slate-800'}`} style={{ width: config.iconSize + 16, height: config.iconSize + 16, padding: 0, overflow: 'hidden' }}>
+          {supportsThumbnail ? (
              <FileThumbnail file={file} fallbackIcon={<Icon size={config.iconSize} className={styles.text} />} />
           ) : (
              <Icon size={config.iconSize} strokeWidth={1.5} />
