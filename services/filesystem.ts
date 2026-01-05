@@ -1,4 +1,5 @@
 
+
 import { FileNode } from '../types';
 import { Filesystem, Directory, FileInfo, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
@@ -88,30 +89,40 @@ class AndroidFileSystem {
       const status = await Filesystem.checkPermissions();
       
       // Strict check: if publicStorage is NOT granted, we return DENIED.
-      // We do not rely on local storage accessMode 'GRANTED' state if the system says no.
+      // CRITICAL FIX: If system says denied, we MUST remove the local storage flag.
+      // This prevents the "Showing as granted when it's not" bug.
       if (status.publicStorage === 'granted') {
          this.accessMode = PermissionStatus.GRANTED;
+         localStorage.setItem('nova_access_mode', PermissionStatus.GRANTED);
          return PermissionStatus.GRANTED;
+      } else {
+         localStorage.removeItem('nova_access_mode');
+         this.accessMode = PermissionStatus.DENIED;
+         return PermissionStatus.DENIED;
       }
-
-      return PermissionStatus.DENIED;
     } catch (e) {
+      this.accessMode = PermissionStatus.DENIED;
       return PermissionStatus.DENIED;
     }
   }
 
   async requestFullAccess(): Promise<boolean> {
     try {
+      // 1. Request standard permissions
       const res = await Filesystem.requestPermissions();
+      
       if (res.publicStorage === 'granted') {
          this.accessMode = PermissionStatus.GRANTED;
          localStorage.setItem('nova_access_mode', PermissionStatus.GRANTED);
          return true;
       }
+      
+      // 2. If denied, check if we need to guide user to settings (handled by UI via confirmFullAccess/openSettings)
+      return false;
     } catch (e) {
       console.error("Failed to request permissions", e);
+      return false; 
     }
-    return false; 
   }
 
   async confirmFullAccess(): Promise<boolean> {
@@ -132,9 +143,16 @@ class AndroidFileSystem {
      return true;
   }
 
-  // --- Core Methods ---
+  async openSettings() {
+    try {
+      // @ts-ignore
+      await (App as any).openAppSettings();
+    } catch (e) {
+      console.warn("Failed to open settings", e);
+    }
+  }
 
-  async openSettings() { console.warn("Opening settings..."); }
+  // --- Core Methods ---
 
   private getBookmarks(): Set<string> {
     try {

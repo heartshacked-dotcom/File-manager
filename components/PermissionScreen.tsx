@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { Shield, FolderOpen, AlertCircle, CheckCircle2, ChevronRight, Settings } from 'lucide-react';
+import { Shield, FolderOpen, AlertCircle, CheckCircle2, ChevronRight, Settings, ExternalLink } from 'lucide-react';
+import { fileSystem } from '../services/filesystem';
 
 interface PermissionScreenProps {
   onGrantFull: () => Promise<boolean>;
@@ -10,12 +11,16 @@ interface PermissionScreenProps {
 
 const PermissionScreen: React.FC<PermissionScreenProps> = ({ onGrantFull, onGrantScoped, isChecking }) => {
   const [error, setError] = useState<string | null>(null);
+  const [showSettingsBtn, setShowSettingsBtn] = useState(false);
 
   const handleFullAccess = async () => {
     setError(null);
     try {
       const success = await onGrantFull();
-      if (!success) setError("Permission was not granted in Settings. Please try again.");
+      if (!success) {
+         setError("Permission denied. Android may have permanently blocked it.");
+         setShowSettingsBtn(true);
+      }
     } catch (e) {
       setError("Failed to open settings.");
     }
@@ -29,6 +34,10 @@ const PermissionScreen: React.FC<PermissionScreenProps> = ({ onGrantFull, onGran
     } catch (e) {
       setError("Failed to launch folder picker.");
     }
+  };
+
+  const handleOpenSettings = async () => {
+    await fileSystem.openSettings();
   };
 
   return (
@@ -62,8 +71,16 @@ const PermissionScreen: React.FC<PermissionScreenProps> = ({ onGrantFull, onGran
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 justify-center animate-in slide-in-from-top-2">
-             <AlertCircle size={16} /> {error}
+          <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl text-sm font-medium flex flex-col items-center gap-2 justify-center animate-in slide-in-from-top-2">
+             <div className="flex items-center gap-2"><AlertCircle size={16} /> {error}</div>
+             {showSettingsBtn && (
+               <button 
+                 onClick={handleOpenSettings}
+                 className="mt-1 text-xs bg-red-100 dark:bg-red-800/30 px-3 py-1 rounded-full hover:bg-red-200 transition-colors flex items-center gap-1"
+               >
+                 Open Settings <ExternalLink size={10} />
+               </button>
+             )}
           </div>
         )}
 
