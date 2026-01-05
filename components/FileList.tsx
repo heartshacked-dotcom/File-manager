@@ -3,7 +3,6 @@ import React, { useRef, useEffect, useState } from 'react';
 import { FileNode, ViewMode, SortField } from '../types';
 import { getFileIcon } from '../constants';
 import { fileSystem } from '../services/filesystem';
-import FileThumbnail from './FileThumbnail';
 import { 
   MoreVertical, CheckCircle2, Smartphone, HardDrive, 
   Download, Trash2, Lock, ChevronRight, Shield, FileLock,
@@ -188,9 +187,6 @@ const FileItem: React.FC<{
   const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Check if we should attempt to render a thumbnail
-  const supportsThumbnail = file.type === 'image' || file.type === 'video' || file.type === 'audio' || file.name.endsWith('.apk');
-
   // Drag & Drop
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({ id: file.id, name: file.name }));
@@ -247,33 +243,16 @@ const FileItem: React.FC<{
       >
         {isSelected && <div className="absolute top-1 right-1 z-10 text-blue-600 dark:text-blue-400"><CheckCircle2 size={16} fill="currentColor" className="text-white dark:text-slate-900" /></div>}
         
-        {/* Thumbnail or Icon Container */}
-        {supportsThumbnail ? (
-           <div className={`w-full aspect-square mb-2 rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-slate-800 relative`}>
-              <FileThumbnail 
-                file={file} 
-                fallbackIcon={<div className={`w-full h-full flex items-center justify-center ${styles.bg} ${styles.text}`}><Icon size={config.iconSize} /></div>} 
-              />
-              {/* Type Badge for non-images to distinguish from pure images */}
-              {file.type !== 'image' && (
-                <div className="absolute bottom-1 right-1 bg-black/50 backdrop-blur rounded-full p-1 text-white">
-                  <Icon size={10} />
-                </div>
-              )}
-           </div>
-        ) : (
-           <div className={`mb-2 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text} ${config.padding}`}>
-              <Icon size={config.iconSize} strokeWidth={1.5} />
-           </div>
-        )}
-        
-        {/* Badges Overlay (Outside thumbnail to be visible) */}
-        {(file.isEncrypted || file.isProtected) && (
-          <div className="absolute top-1 left-1 flex gap-0.5 z-10 pointer-events-none">
-             {file.isEncrypted && <div className="bg-slate-700 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950"><FileLock size={8}/></div>}
-             {file.isProtected && !file.isEncrypted && <div className="bg-amber-500 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950"><Shield size={8}/></div>}
-          </div>
-        )}
+        <div className={`mb-2 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text} ${config.padding}`}>
+            <Icon size={config.iconSize} strokeWidth={1.5} />
+            {/* Badges */}
+            {(file.isEncrypted || file.isProtected) && (
+             <div className="absolute -bottom-1 -right-1 flex gap-0.5 z-10">
+                {file.isEncrypted && <div className="bg-slate-700 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950"><FileLock size={8}/></div>}
+                {file.isProtected && !file.isEncrypted && <div className="bg-amber-500 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950"><Shield size={8}/></div>}
+             </div>
+            )}
+        </div>
         
         <span className={`${config.textSize} font-medium text-center truncate w-full text-slate-700 dark:text-slate-300 px-0.5`}>{file.name}</span>
         {/* Only show size/date in Medium+ Grid */}
@@ -299,14 +278,8 @@ const FileItem: React.FC<{
            : 'hover:bg-slate-100 dark:hover:bg-slate-800'
         }`}
        >
-          <div className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-             {isSelected ? <CheckCircle2 size={config.iconSize} /> : (
-                supportsThumbnail ? (
-                   <div className="w-8 h-8 rounded overflow-hidden">
-                      <FileThumbnail file={file} fallbackIcon={<Icon size={config.iconSize} className={styles.text} />} />
-                   </div>
-                ) : <Icon size={config.iconSize} className={file.type === 'folder' ? styles.text : ''} />
-             )}
+          <div className={`flex-shrink-0 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+             {isSelected ? <CheckCircle2 size={config.iconSize} /> : <Icon size={config.iconSize} className={file.type === 'folder' ? styles.text : ''} />}
           </div>
           
           <div className={`min-w-0 ${config.textSize} font-medium text-slate-700 dark:text-slate-200 truncate`}>
@@ -338,12 +311,8 @@ const FileItem: React.FC<{
           : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800'
       }`}
     >
-       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${!supportsThumbnail ? styles.bg + ' ' + styles.text : 'bg-slate-100 dark:bg-slate-800'}`} style={{ width: config.iconSize + 16, height: config.iconSize + 16, padding: 0, overflow: 'hidden' }}>
-          {supportsThumbnail ? (
-             <FileThumbnail file={file} fallbackIcon={<Icon size={config.iconSize} className={styles.text} />} />
-          ) : (
-             <Icon size={config.iconSize} strokeWidth={1.5} />
-          )}
+       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${styles.bg} ${styles.text}`} style={{ padding: config.iconSize > 24 ? '0.75rem' : '0.5rem' }}>
+          <Icon size={config.iconSize} strokeWidth={1.5} />
        </div>
 
        <div className="flex-1 min-w-0 flex flex-col justify-center">
@@ -480,7 +449,7 @@ const FileList: React.FC<FileListProps> = React.memo(({
       {/* Detail Header */}
       {config.type === 'DETAIL' && (
          <div className={`grid grid-cols-[auto_1fr_auto_auto] gap-4 items-center ${config.padding} text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur z-10`}>
-            <div className="w-8"></div> {/* Icon placeholder */}
+            <div className="w-6"></div> {/* Icon placeholder */}
             <div>Name</div>
             <div className="hidden sm:block w-24 text-right">Date</div>
             <div className="w-20 text-right">Size</div>
