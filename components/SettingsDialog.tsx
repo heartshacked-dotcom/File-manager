@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Moon, Sun, Monitor, Grid, List, 
   ArrowDownAZ, Eye, EyeOff, Shield, 
-  Trash2, HardDrive, Smartphone, Lock
+  Trash2, HardDrive, Smartphone, Lock, AlignJustify
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { ViewMode, SortField } from '../types';
@@ -22,7 +22,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const { theme, setTheme } = useTheme();
   
   // Local state for settings that map to localStorage
-  const [defaultView, setDefaultView] = useState<ViewMode>(ViewMode.GRID);
+  const [defaultView, setDefaultView] = useState<ViewMode>(ViewMode.GRID_MEDIUM);
   const [defaultSort, setDefaultSort] = useState<SortField>(SortField.NAME);
   const [showHidden, setShowHidden] = useState(false);
   const [cacheSize, setCacheSize] = useState('12.5 MB'); // Mock value
@@ -30,7 +30,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
   // Load settings on open
   useEffect(() => {
     if (isOpen) {
-      setDefaultView((localStorage.getItem('nova_default_view') as ViewMode) || ViewMode.GRID);
+      const saved = localStorage.getItem('nova_default_view');
+      if (saved === 'GRID') setDefaultView(ViewMode.GRID_MEDIUM);
+      else if (saved === 'LIST') setDefaultView(ViewMode.LIST_MEDIUM);
+      else setDefaultView((saved as ViewMode) || ViewMode.GRID_MEDIUM);
+
       setDefaultSort((localStorage.getItem('nova_default_sort') as SortField) || SortField.NAME);
       setShowHidden(localStorage.getItem('nova_show_hidden') === 'true');
     }
@@ -49,7 +53,6 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const handleToggleHidden = (val: boolean) => {
     setShowHidden(val);
     localStorage.setItem('nova_show_hidden', String(val));
-    // Trigger global event for components to update immediately if they are listening
     window.dispatchEvent(new Event('nova_settings_changed'));
   };
 
@@ -83,7 +86,6 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 {[
                   { id: 'light', icon: Sun, label: 'Light' },
                   { id: 'dark', icon: Moon, label: 'Dark' },
-                  // { id: 'system', icon: Monitor, label: 'System' } // Optional
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -110,25 +112,31 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
                    <div className="flex items-center gap-3">
                       <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl text-slate-500 shadow-sm">
-                         {defaultView === ViewMode.GRID ? <Grid size={20} /> : <List size={20} />}
+                         {defaultView.includes('GRID') ? <Grid size={20} /> : defaultView.includes('DETAIL') ? <AlignJustify size={20}/> : <List size={20} />}
                       </div>
                       <div>
-                         <div className="font-medium text-slate-900 dark:text-slate-100">Default View</div>
+                         <div className="font-medium text-slate-900 dark:text-slate-100">Default View Layout</div>
                          <div className="text-xs text-slate-500">Preferred layout for new folders</div>
                       </div>
                    </div>
                    <div className="flex bg-slate-200 dark:bg-slate-700 p-1 rounded-lg">
                       <button 
-                        onClick={() => handleSaveView(ViewMode.GRID)}
-                        className={`p-2 rounded-md transition-all ${defaultView === ViewMode.GRID ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+                        onClick={() => handleSaveView(ViewMode.GRID_MEDIUM)}
+                        className={`p-2 rounded-md transition-all ${defaultView.includes('GRID') ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
                       >
                         <Grid size={18} />
                       </button>
                       <button 
-                        onClick={() => handleSaveView(ViewMode.LIST)}
-                        className={`p-2 rounded-md transition-all ${defaultView === ViewMode.LIST ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+                        onClick={() => handleSaveView(ViewMode.LIST_MEDIUM)}
+                        className={`p-2 rounded-md transition-all ${defaultView.includes('LIST') ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
                       >
                         <List size={18} />
+                      </button>
+                      <button 
+                        onClick={() => handleSaveView(ViewMode.DETAIL_MEDIUM)}
+                        className={`p-2 rounded-md transition-all ${defaultView.includes('DETAIL') ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}
+                      >
+                        <AlignJustify size={18} />
                       </button>
                    </div>
                 </div>

@@ -4,9 +4,10 @@ import { FileNode, ViewMode } from '../types';
 import FileList from './FileList';
 import Breadcrumbs from './Breadcrumbs';
 import SortFilterControl from './SortFilterControl';
+import ViewOptionsControl from './ViewOptionsControl';
 import { 
-  ChevronLeft, Grid, List, Search, Filter, 
-  Trash2, Menu, MoreVertical, LayoutGrid, ArrowUp
+  ChevronLeft, Search, Filter, 
+  Trash2, Menu, LayoutGrid, ArrowUp, Grid, List, AlignJustify
 } from 'lucide-react';
 import { useFilePane } from '../hooks/useFilePane';
 import { Loader2 } from 'lucide-react';
@@ -33,6 +34,8 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
   className
 }) => {
   const [showFilter, setShowFilter] = useState(false);
+  const [showViewOptions, setShowViewOptions] = useState(false);
+  
   const {
     currentPath, files, selectedIds, setSelectedIds, lastFocusedId, setLastFocusedId,
     viewMode, setViewMode, sortField, setSortField, sortDirection, setSortDirection,
@@ -110,6 +113,13 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
     }
   };
 
+  // Icon for view mode button
+  const getViewIcon = () => {
+    if (viewMode.startsWith('GRID')) return <Grid size={20} />;
+    if (viewMode.startsWith('DETAIL')) return <AlignJustify size={20} />;
+    return <List size={20} />;
+  };
+
   return (
     <div 
       className={`flex flex-col h-full bg-white dark:bg-slate-950 transition-colors duration-200 ${className}`}
@@ -148,7 +158,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
            </div>
 
            {/* Right: Actions */}
-           <div className="flex items-center gap-1 pl-2">
+           <div className="flex items-center gap-1 pl-2 relative">
                {isTrashLocation && files.length > 0 && (
                   <button 
                     onClick={onEmptyTrash} 
@@ -166,18 +176,29 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
                <div className="w-px h-5 bg-slate-200 dark:bg-slate-800 mx-1"></div>
 
                <button 
-                  onClick={() => setShowFilter(!showFilter)} 
+                  onClick={() => { setShowFilter(!showFilter); setShowViewOptions(false); }} 
                   className={`p-2 rounded-xl transition-all ${showFilter ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                >
                   <Filter size={20} />
                </button>
                
                <button 
-                  onClick={() => setViewMode(viewMode === ViewMode.GRID ? ViewMode.LIST : ViewMode.GRID)} 
-                  className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  onClick={() => { setShowViewOptions(!showViewOptions); setShowFilter(false); }}
+                  className={`p-2 rounded-xl transition-colors ${showViewOptions ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                >
-                  {viewMode === ViewMode.GRID ? <LayoutGrid size={20} /> : <List size={20} />}
+                  {getViewIcon()}
                </button>
+
+               {/* View Options Popover */}
+               {showViewOptions && (
+                 <div className="absolute top-full right-0 mt-2 z-50">
+                    <ViewOptionsControl 
+                       viewMode={viewMode}
+                       setViewMode={setViewMode}
+                       onClose={() => setShowViewOptions(false)}
+                    />
+                 </div>
+               )}
            </div>
         </div>
 
@@ -201,7 +222,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
       {/* File List with Pull to Refresh */}
       <div 
         ref={containerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-2 custom-scrollbar bg-slate-50/50 dark:bg-slate-950 relative"
+        className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-slate-50/50 dark:bg-slate-950 relative"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -216,7 +237,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
             </div>
          </div>
 
-         <div style={{ transform: `translateY(${pullY > 0 ? pullY * 0.2 : 0}px)`, transition: isRefreshing ? 'transform 0.2s' : 'none' }}>
+         <div style={{ transform: `translateY(${pullY > 0 ? pullY * 0.2 : 0}px)`, transition: isRefreshing ? 'transform 0.2s' : 'none', height: '100%' }}>
            <FileList 
               files={files}
               viewMode={viewMode}

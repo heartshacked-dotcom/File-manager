@@ -6,8 +6,10 @@ import { fileSystem } from '../services/filesystem';
 import { 
   MoreVertical, CheckCircle2, Smartphone, HardDrive, 
   Download, Trash2, Lock, ChevronRight, Shield, FileLock,
-  Image, Video, Music, FileText, Archive, Play, Clock
+  Image, Video, Music, FileText, Archive, Clock
 } from 'lucide-react';
+
+// --- Helpers ---
 
 const formatDate = (ts: number) => {
   const date = new Date(ts);
@@ -37,6 +39,43 @@ const getFileStyles = (type: string, isTrash: boolean, isProtected: boolean) => 
   }
 };
 
+interface ViewConfig {
+  type: 'GRID' | 'LIST' | 'DETAIL';
+  iconSize: number;
+  padding: string;
+  textSize: string;
+  subTextSize?: string;
+  gridCols?: string;
+}
+
+const getViewConfig = (mode: ViewMode): ViewConfig => {
+  switch (mode) {
+    case ViewMode.GRID_SMALL:
+      return { type: 'GRID', iconSize: 24, padding: 'p-2', textSize: 'text-[10px]', gridCols: 'grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8' };
+    case ViewMode.GRID_MEDIUM:
+      return { type: 'GRID', iconSize: 36, padding: 'p-3.5', textSize: 'text-xs', gridCols: 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6' };
+    case ViewMode.GRID_LARGE:
+      return { type: 'GRID', iconSize: 48, padding: 'p-5', textSize: 'text-sm', gridCols: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5' };
+    
+    case ViewMode.LIST_SMALL:
+      return { type: 'LIST', iconSize: 20, padding: 'p-1.5', textSize: 'text-xs', subTextSize: 'text-[10px]' };
+    case ViewMode.LIST_MEDIUM:
+      return { type: 'LIST', iconSize: 24, padding: 'p-2.5', textSize: 'text-sm', subTextSize: 'text-xs' };
+    case ViewMode.LIST_LARGE:
+      return { type: 'LIST', iconSize: 32, padding: 'p-4', textSize: 'text-base', subTextSize: 'text-sm' };
+
+    case ViewMode.DETAIL_SMALL:
+      return { type: 'DETAIL', iconSize: 16, padding: 'py-1 px-2', textSize: 'text-xs' };
+    case ViewMode.DETAIL_MEDIUM:
+      return { type: 'DETAIL', iconSize: 20, padding: 'py-2 px-3', textSize: 'text-sm' };
+    case ViewMode.DETAIL_LARGE:
+      return { type: 'DETAIL', iconSize: 24, padding: 'py-3 px-4', textSize: 'text-base' };
+      
+    default:
+      return { type: 'GRID', iconSize: 36, padding: 'p-3.5', textSize: 'text-xs', gridCols: 'grid-cols-3 sm:grid-cols-4' };
+  }
+};
+
 interface FileListProps {
   files: FileNode[]; 
   viewMode: ViewMode;
@@ -49,6 +88,7 @@ interface FileListProps {
 }
 
 // --- Dashboard Components ---
+// (Unchanged StorageCard, CategoryButton, QuickAction, RecentFileItem...)
 
 const StorageCard: React.FC<{
   name: string;
@@ -57,14 +97,9 @@ const StorageCard: React.FC<{
   total: number;
   onClick: () => void;
 }> = ({ name, type, used, total, onClick }) => {
-  // If total is 0 or negative, we treat it as unknown/unbounded or just invalid for percent calc
   const hasTotal = total > 0;
   const percent = hasTotal ? Math.min(100, Math.round((used / total) * 100)) : 0;
   const free = hasTotal ? Math.max(0, total - used) : 0;
-  
-  const displayTotal = hasTotal ? formatSize(total) : 'Unknown';
-  const displayFree = hasTotal ? formatSize(free) : 'Unknown';
-  const displayPercent = hasTotal ? `${percent}%` : '--';
   
   return (
     <button 
@@ -81,14 +116,14 @@ const StorageCard: React.FC<{
              {type === 'internal' ? <Smartphone size={24} /> : <HardDrive size={24} />}
            </div>
            <div className="text-right">
-             <div className="text-2xl font-bold">{displayPercent}</div>
+             <div className="text-2xl font-bold">{hasTotal ? `${percent}%` : '--'}</div>
              <div className="text-xs text-white/70 font-medium">Used</div>
            </div>
         </div>
         
         <h3 className="font-bold text-lg mb-1">{name}</h3>
         <p className="text-sm text-white/80 mb-4">
-           {hasTotal ? `${displayFree} free of ${displayTotal}` : `${formatSize(used)} used`}
+           {hasTotal ? `${formatSize(free)} free of ${formatSize(total)}` : `${formatSize(used)} used`}
         </p>
         
         <div className="h-1.5 w-full bg-black/20 rounded-full overflow-hidden">
@@ -100,8 +135,6 @@ const StorageCard: React.FC<{
            )}
         </div>
       </div>
-
-      {/* Decorative Circles */}
       <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
       <div className="absolute top-10 -left-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
     </button>
@@ -111,15 +144,11 @@ const StorageCard: React.FC<{
 const CategoryButton: React.FC<{
   icon: React.ReactNode;
   label: string;
-  count?: string;
   colorClass: string;
   bgClass: string;
   onClick: () => void;
 }> = ({ icon, label, colorClass, bgClass, onClick }) => (
-  <button 
-    onClick={onClick}
-    className="flex flex-col items-center gap-2 group"
-  >
+  <button onClick={onClick} className="flex flex-col items-center gap-2 group">
     <div className={`w-14 h-14 ${bgClass} ${colorClass} rounded-2xl flex items-center justify-center transition-transform group-active:scale-90 shadow-sm`}>
       {React.cloneElement(icon as React.ReactElement<any>, { size: 24, strokeWidth: 2 })}
     </div>
@@ -127,32 +156,9 @@ const CategoryButton: React.FC<{
   </button>
 );
 
-const QuickAction: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  subLabel?: string;
-  onClick: () => void;
-  accentColor: string;
-}> = ({ icon, label, subLabel, onClick, accentColor }) => (
-  <button 
-    onClick={onClick}
-    className="flex items-center gap-4 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm active:bg-slate-50 dark:active:bg-slate-800 transition-colors"
-  >
-     <div className={`p-3 rounded-xl ${accentColor} bg-opacity-10 dark:bg-opacity-20`}>
-        {React.cloneElement(icon as React.ReactElement<any>, { className: accentColor.replace('bg-', 'text-'), size: 22 })}
-     </div>
-     <div className="flex-1 text-left">
-        <div className="font-bold text-slate-800 dark:text-slate-100 text-sm">{label}</div>
-        {subLabel && <div className="text-xs text-slate-500 mt-0.5">{subLabel}</div>}
-     </div>
-     <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
-  </button>
-);
-
 const RecentFileItem: React.FC<{ file: FileNode, onClick: () => void }> = ({ file, onClick }) => {
   const Icon = getFileIcon(file.name, file.type);
   const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
-
   return (
     <button onClick={onClick} className="flex items-center gap-3 p-3 w-full bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group">
        <div className={`p-2.5 rounded-lg transition-colors ${styles.bg} ${styles.text}`}>
@@ -166,39 +172,32 @@ const RecentFileItem: React.FC<{ file: FileNode, onClick: () => void }> = ({ fil
   );
 };
 
-// --- File Item Component ---
+// --- Universal File Item Component ---
 const FileItem: React.FC<{
   file: FileNode;
-  viewMode: ViewMode;
+  config: ViewConfig;
   isSelected: boolean;
   onSelect: (id: string, multi: boolean, range: boolean) => void;
   onOpen: (file: FileNode) => void;
   onContextMenu: (e: React.MouseEvent, file: FileNode) => void;
   onDropFile: (sourceId: string, targetFolderId: string) => void;
   isSelectionMode: boolean;
-}> = React.memo(({ file, viewMode, isSelected, onSelect, onOpen, onContextMenu, onDropFile, isSelectionMode }) => {
+}> = React.memo(({ file, config, isSelected, onSelect, onOpen, onContextMenu, onDropFile, isSelectionMode }) => {
   const Icon = getFileIcon(file.name, file.type);
   const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // --- Drag & Drop ---
+  // Drag & Drop
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({ id: file.id, name: file.name }));
     e.dataTransfer.effectAllowed = 'move';
   };
-
   const handleDragOver = (e: React.DragEvent) => {
     if (file.type === 'folder') {
        e.preventDefault(); 
-       e.dataTransfer.dropEffect = 'move';
        e.currentTarget.classList.add('bg-blue-500/20', 'ring-2', 'ring-blue-500', 'rounded-xl');
     }
   };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.currentTarget.classList.remove('bg-blue-500/20', 'ring-2', 'ring-blue-500', 'rounded-xl');
-  };
-
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.currentTarget.classList.remove('bg-blue-500/20', 'ring-2', 'ring-blue-500', 'rounded-xl');
@@ -206,141 +205,133 @@ const FileItem: React.FC<{
     if (data && file.type === 'folder') {
       try {
         const source = JSON.parse(data);
-        if (source.id !== file.id) {
-          onDropFile(source.id, file.id);
-        }
-      } catch (e) { /* ignore */ }
+        if (source.id !== file.id) onDropFile(source.id, file.id);
+      } catch (e) {}
     }
   };
 
-  // --- Interaction Logic ---
   const handleTouchStart = () => {
     longPressTimerRef.current = setTimeout(() => {
       if (navigator.vibrate) navigator.vibrate(50);
       onSelect(file.id, true, false); 
     }, 500); 
   };
-
   const handleTouchEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
   };
-
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     const isMulti = e.ctrlKey || e.metaKey || isSelectionMode;
-    const isRange = e.shiftKey;
-
-    if (isMulti || isRange) {
-       onSelect(file.id, isMulti, isRange);
-    } else {
-       onOpen(file);
-    }
+    if (isMulti || e.shiftKey) onSelect(file.id, isMulti, e.shiftKey);
+    else onOpen(file);
   };
 
-  // --- Grid View Render ---
-  if (viewMode === ViewMode.GRID) {
+  // --- Render Layouts ---
+
+  // 1. GRID LAYOUT
+  if (config.type === 'GRID') {
     return (
       <div 
-        draggable
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={handleClick}
-        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file); }}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className={`group relative flex flex-col items-center p-3 rounded-2xl transition-all duration-200 cursor-pointer border select-none ${
+        draggable onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+        onClick={handleClick} onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file); }}
+        onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+        className={`group relative flex flex-col items-center p-2 rounded-2xl transition-all cursor-pointer select-none ${
           isSelected 
-            ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 shadow-md dark:shadow-blue-900/20' 
-            : 'bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
+            ? 'bg-blue-50 dark:bg-blue-900/40 border border-blue-500 shadow-md' 
+            : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
         }`}
       >
-        {isSelected && (
-          <div className="absolute top-1.5 right-1.5 z-10 animate-in zoom-in duration-200">
-            <CheckCircle2 size={18} className="text-blue-600 dark:text-blue-400 fill-white dark:fill-slate-900" />
-          </div>
-        )}
+        {isSelected && <div className="absolute top-1 right-1 z-10 text-blue-600 dark:text-blue-400"><CheckCircle2 size={16} fill="currentColor" className="text-white dark:text-slate-900" /></div>}
         
-        <div className="relative mb-2">
-          <div className={`p-3.5 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text}`}>
-            <Icon size={36} strokeWidth={1.5} />
-          </div>
-          
-          {/* Status Indicators */}
-          {(file.isEncrypted || file.isProtected) && (
-             <div className="absolute -bottom-1 -right-1 flex gap-0.5">
-                {file.isEncrypted && (
-                  <div className="bg-slate-700 text-white p-1 rounded-full ring-2 ring-white dark:ring-slate-950 shadow-sm" title="Encrypted">
-                    <FileLock size={10} strokeWidth={2.5} />
-                  </div>
-                )}
-                {file.isProtected && !file.isEncrypted && (
-                  <div className="bg-amber-500 text-white p-1 rounded-full ring-2 ring-white dark:ring-slate-950 shadow-sm" title="Protected">
-                    <Shield size={10} strokeWidth={2.5} />
-                  </div>
-                )}
+        <div className={`mb-2 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text} ${config.padding}`}>
+            <Icon size={config.iconSize} strokeWidth={1.5} />
+            {/* Badges */}
+            {(file.isEncrypted || file.isProtected) && (
+             <div className="absolute -bottom-1 -right-1 flex gap-0.5 z-10">
+                {file.isEncrypted && <div className="bg-slate-700 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950"><FileLock size={8}/></div>}
+                {file.isProtected && !file.isEncrypted && <div className="bg-amber-500 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950"><Shield size={8}/></div>}
              </div>
-          )}
+            )}
         </div>
         
-        <span className="text-xs font-medium text-center truncate w-full text-slate-700 dark:text-slate-300 px-0.5">
-          {file.name}
-        </span>
-        <span className={`text-[10px] mt-0.5 font-medium ${file.isTrash ? 'text-red-400' : 'text-slate-400 dark:text-slate-500'}`}>
-          {file.isTrash ? `Deleted ${formatDate(file.updatedAt)}` : (file.type === 'folder' ? formatDate(file.updatedAt) : formatSize(file.size))}
-        </span>
+        <span className={`${config.textSize} font-medium text-center truncate w-full text-slate-700 dark:text-slate-300 px-0.5`}>{file.name}</span>
+        {/* Only show size/date in Medium+ Grid */}
+        {config.iconSize >= 36 && (
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate w-full text-center mt-0.5">
+               {file.type === 'folder' ? formatDate(file.updatedAt) : formatSize(file.size)}
+            </span>
+        )}
       </div>
     );
   }
 
-  // --- List View Render ---
+  // 2. DETAIL LAYOUT (Row)
+  if (config.type === 'DETAIL') {
+     return (
+       <div 
+        draggable onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+        onClick={handleClick} onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file); }}
+        onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+        className={`group grid grid-cols-[auto_1fr_auto_auto] gap-4 items-center ${config.padding} rounded-lg cursor-pointer select-none transition-colors border-b border-slate-50 dark:border-slate-800/50 ${
+          isSelected 
+           ? 'bg-blue-50 dark:bg-blue-900/20' 
+           : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+        }`}
+       >
+          <div className={`flex-shrink-0 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+             {isSelected ? <CheckCircle2 size={config.iconSize} /> : <Icon size={config.iconSize} className={file.type === 'folder' ? styles.text : ''} />}
+          </div>
+          
+          <div className={`min-w-0 ${config.textSize} font-medium text-slate-700 dark:text-slate-200 truncate`}>
+             {file.name}
+          </div>
+
+          <div className={`${config.textSize} text-slate-500 dark:text-slate-400 whitespace-nowrap hidden sm:block w-24 text-right`}>
+             {formatDate(file.updatedAt)}
+          </div>
+
+          <div className={`${config.textSize} text-slate-500 dark:text-slate-400 whitespace-nowrap w-20 text-right`}>
+             {file.type === 'folder' ? '--' : formatSize(file.size)}
+          </div>
+       </div>
+     );
+  }
+
+  // 3. LIST LAYOUT (Simple)
   return (
     <div 
-      draggable
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      onClick={handleClick}
-      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file); }}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      className={`group flex items-center gap-3 p-2 rounded-xl border border-transparent transition-all cursor-pointer select-none ${
+      draggable onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+      onClick={handleClick} onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file); }}
+      onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+      className={`group flex items-center gap-3 rounded-xl border border-transparent transition-all cursor-pointer select-none ${
+         config.padding
+      } ${
          isSelected 
           ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' 
           : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800'
       }`}
     >
-       <div className={`relative p-2.5 rounded-xl flex-shrink-0 ${styles.bg} ${styles.text}`}>
-          <Icon size={24} strokeWidth={1.5} />
-          
-          {(file.isEncrypted || file.isProtected) && (
-            <div className="absolute -bottom-1 -right-1 bg-slate-800 dark:bg-black text-white p-0.5 rounded-full ring-2 ring-white dark:ring-slate-950">
-               {file.isEncrypted ? <Lock size={8} /> : <Shield size={8} />}
-            </div>
-          )}
+       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${styles.bg} ${styles.text}`} style={{ padding: config.iconSize > 24 ? '0.75rem' : '0.5rem' }}>
+          <Icon size={config.iconSize} strokeWidth={1.5} />
        </div>
 
        <div className="flex-1 min-w-0 flex flex-col justify-center">
          <div className="flex items-center gap-2">
-           <h4 className={`text-sm font-medium truncate ${isSelected ? 'text-blue-700 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>
+           <h4 className={`${config.textSize} font-medium truncate ${isSelected ? 'text-blue-700 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200'}`}>
              {file.name}
            </h4>
            {file.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 font-medium">Hidden</span>}
          </div>
-         <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-500 mt-0.5">
-           {file.isTrash ? (
-             <span className="truncate text-red-400 font-medium">Deleted {formatDate(file.updatedAt)}</span>
-           ) : (
-             <span className="truncate">{formatDate(file.updatedAt)}</span>
-           )}
-           <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
-           <span className="flex-shrink-0">{file.type === 'folder' ? 'Folder' : formatSize(file.size)}</span>
-         </div>
+         {/* Subtitle logic varies by list size */}
+         {config.iconSize >= 24 && (
+             <div className={`flex items-center gap-3 ${config.subTextSize} text-slate-500 dark:text-slate-500 mt-0.5`}>
+                {file.isTrash ? (
+                   <span className="truncate text-red-400 font-medium">Deleted {formatDate(file.updatedAt)}</span>
+                ) : (
+                   <span className="truncate">{formatDate(file.updatedAt)} • {file.type === 'folder' ? 'Folder' : formatSize(file.size)}</span>
+                )}
+             </div>
+         )}
        </div>
 
        <div className="flex items-center gap-1">
@@ -363,13 +354,7 @@ const FileItem: React.FC<{
 
 // --- Main File List Container ---
 const FileList: React.FC<FileListProps> = React.memo(({ 
-  files, 
-  viewMode, 
-  selectedIds, 
-  onSelect, 
-  onOpen,
-  onContextMenu,
-  onDropFile
+  files, viewMode, selectedIds, onSelect, onOpen, onContextMenu, onDropFile
 }) => {
   const isSelectionMode = selectedIds.size > 0;
   
@@ -379,10 +364,9 @@ const FileList: React.FC<FileListProps> = React.memo(({
 
   useEffect(() => {
     if (isRootScreen) {
-      // Load recent files for dashboard preview
       fileSystem.getRecentFiles().then(res => setRecentFiles(res.slice(0, 3)));
     }
-  }, [isRootScreen, files]); // trigger on files change (refresh)
+  }, [isRootScreen, files]); 
 
   if (files.length === 0) {
     return (
@@ -402,8 +386,6 @@ const FileList: React.FC<FileListProps> = React.memo(({
      const downloads = files.find(f => f.id === 'downloads_shortcut');
      const trash = files.find(f => f.id === 'trash');
      const vault = files.find(f => f.name === 'Secure Vault');
-
-     // Find category virtual nodes
      const catImg = files.find(f => f.id === 'category_image');
      const catVid = files.find(f => f.id === 'category_video');
      const catAud = files.find(f => f.id === 'category_audio');
@@ -412,33 +394,18 @@ const FileList: React.FC<FileListProps> = React.memo(({
 
      return (
         <div className="p-4 space-y-8 pb-20">
-           {/* Storage Carousel */}
            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-4 snap-x">
               {internalStorage && (
                 <div className="min-w-[85%] sm:min-w-[320px] snap-center">
-                   <StorageCard 
-                     name="Internal Storage" 
-                     type="internal" 
-                     used={internalStorage.size} 
-                     total={internalStorage.capacity || 0} 
-                     onClick={() => onOpen(internalStorage)}
-                   />
+                   <StorageCard name="Internal Storage" type="internal" used={internalStorage.size} total={internalStorage.capacity || 0} onClick={() => onOpen(internalStorage)} />
                 </div>
               )}
               {sdCard && (
                 <div className="min-w-[85%] sm:min-w-[320px] snap-center">
-                   <StorageCard 
-                     name="SD Card" 
-                     type="sd" 
-                     used={sdCard.size} 
-                     total={sdCard.capacity || 0} 
-                     onClick={() => onOpen(sdCard)}
-                   />
+                   <StorageCard name="SD Card" type="sd" used={sdCard.size} total={sdCard.capacity || 0} onClick={() => onOpen(sdCard)} />
                 </div>
               )}
            </div>
-
-           {/* Categories Grid */}
            <div className="space-y-3">
               <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1">Categories</h3>
               <div className="grid grid-cols-4 gap-x-2 gap-y-4">
@@ -452,8 +419,6 @@ const FileList: React.FC<FileListProps> = React.memo(({
                  <CategoryButton icon={<Shield/>} label="Vault" bgClass="bg-amber-100 dark:bg-amber-900/30" colorClass="text-amber-600 dark:text-amber-400" onClick={() => vault && onOpen(vault)} />
               </div>
            </div>
-
-           {/* Recent Files Preview */}
            <div className="space-y-3">
              <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Recent Files</h3>
@@ -475,22 +440,38 @@ const FileList: React.FC<FileListProps> = React.memo(({
      );
   }
 
-  // --- STANDARD FILE LIST ---
+  // --- STANDARD FILE LIST RENDER ---
+  
+  const config = getViewConfig(viewMode);
+
   return (
-    <div className={viewMode === ViewMode.GRID ? "grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2" : "flex flex-col gap-1 p-2"}>
-      {files.map(file => (
-        <FileItem 
-          key={file.id}
-          file={file}
-          viewMode={viewMode}
-          isSelected={selectedIds.has(file.id)}
-          onSelect={onSelect}
-          onOpen={onOpen}
-          onContextMenu={onContextMenu}
-          onDropFile={onDropFile}
-          isSelectionMode={isSelectionMode}
-        />
-      ))}
+    <div className="flex flex-col h-full">
+      {/* Detail Header */}
+      {config.type === 'DETAIL' && (
+         <div className={`grid grid-cols-[auto_1fr_auto_auto] gap-4 items-center ${config.padding} text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur z-10`}>
+            <div className="w-6"></div> {/* Icon placeholder */}
+            <div>Name</div>
+            <div className="hidden sm:block w-24 text-right">Date</div>
+            <div className="w-20 text-right">Size</div>
+         </div>
+      )}
+
+      {/* Items Container */}
+      <div className={`flex-1 p-2 ${config.type === 'GRID' ? `grid ${config.gridCols} gap-2` : 'flex flex-col gap-1'}`}>
+        {files.map(file => (
+          <FileItem 
+            key={file.id}
+            file={file}
+            config={config}
+            isSelected={selectedIds.has(file.id)}
+            onSelect={onSelect}
+            onOpen={onOpen}
+            onContextMenu={onContextMenu}
+            onDropFile={onDropFile}
+            isSelectionMode={isSelectionMode}
+          />
+        ))}
+      </div>
     </div>
   );
 });

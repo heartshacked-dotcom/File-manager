@@ -15,10 +15,16 @@ export const useFilePane = (initialPathId: string = 'root_internal', permissionG
   const [lastFocusedId, setLastFocusedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // View State - Initialize from LocalStorage
-  const [viewMode, setViewMode] = useState<ViewMode>(() => 
-    (localStorage.getItem('nova_default_view') as ViewMode) || ViewMode.GRID
-  );
+  // View State - Initialize from LocalStorage with Migration Logic
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem('nova_default_view');
+    // Migration for old values
+    if (saved === 'GRID') return ViewMode.GRID_MEDIUM;
+    if (saved === 'LIST') return ViewMode.LIST_MEDIUM;
+    // Check if saved value is valid enum, otherwise default
+    return (saved as ViewMode) || ViewMode.GRID_MEDIUM;
+  });
+
   const [sortField, setSortField] = useState<SortField>(() => 
     (localStorage.getItem('nova_default_sort') as SortField) || SortField.NAME
   );
@@ -37,8 +43,6 @@ export const useFilePane = (initialPathId: string = 'root_internal', permissionG
   useEffect(() => {
     const handleSettingsChange = () => {
       setShowHidden(localStorage.getItem('nova_show_hidden') === 'true');
-      // Optionally update other defaults if dynamic switching is desired, 
-      // though typically viewMode is per-pane and persistent across navigation.
     };
     window.addEventListener('nova_settings_changed', handleSettingsChange);
     return () => window.removeEventListener('nova_settings_changed', handleSettingsChange);

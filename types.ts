@@ -22,8 +22,15 @@ export interface BreadcrumbItem {
 }
 
 export enum ViewMode {
-  GRID = 'GRID',
-  LIST = 'LIST',
+  GRID_SMALL = 'GRID_SMALL',
+  GRID_MEDIUM = 'GRID_MEDIUM',
+  GRID_LARGE = 'GRID_LARGE',
+  LIST_SMALL = 'LIST_SMALL',
+  LIST_MEDIUM = 'LIST_MEDIUM',
+  LIST_LARGE = 'LIST_LARGE',
+  DETAIL_SMALL = 'DETAIL_SMALL',
+  DETAIL_MEDIUM = 'DETAIL_MEDIUM',
+  DETAIL_LARGE = 'DETAIL_LARGE',
 }
 
 export enum SortField {
