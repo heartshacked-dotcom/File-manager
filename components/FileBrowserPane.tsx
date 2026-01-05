@@ -1,14 +1,15 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { FileNode, ViewMode } from '../types';
 import FileList from './FileList';
 import Breadcrumbs from './Breadcrumbs';
 import SortFilterControl from './SortFilterControl';
 import { 
-  ChevronLeft, ChevronRight, Grid, List, Search, Filter, 
-  ArrowUp, RotateCw, MoreVertical, Loader2, Trash2, Menu
+  ChevronLeft, Grid, List, Search, Filter, 
+  Trash2, Menu, MoreVertical, LayoutGrid, ArrowUp
 } from 'lucide-react';
 import { useFilePane } from '../hooks/useFilePane';
+import { Loader2 } from 'lucide-react';
 
 interface FileBrowserPaneProps {
   paneState: ReturnType<typeof useFilePane>;
@@ -36,7 +37,7 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
     currentPath, files, selectedIds, setSelectedIds, lastFocusedId, setLastFocusedId,
     viewMode, setViewMode, sortField, setSortField, sortDirection, setSortDirection,
     searchQuery, setSearchQuery, filterType, setFilterType, showHidden, setShowHidden,
-    canGoBack, canGoForward, goBack, goForward, navigateTo, navigateUp, refreshFiles
+    canGoBack, goBack, navigateTo, navigateUp, refreshFiles
   } = paneState;
 
   // --- Pull to Refresh State ---
@@ -113,63 +114,89 @@ const FileBrowserPane: React.FC<FileBrowserPaneProps> = ({
     <div 
       className={`flex flex-col h-full bg-white dark:bg-slate-950 transition-colors duration-200 ${className}`}
     >
-      {/* Pane Toolbar */}
-      <div className="flex items-center p-2 border-b gap-1 flex-shrink-0 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-         {onToggleSidebar && (
-            <button onClick={onToggleSidebar} className="md:hidden p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 mr-1">
-               <Menu size={18} />
-            </button>
-         )}
-         <button onClick={goBack} disabled={!canGoBack} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30">
-            <ChevronLeft size={18} />
-         </button>
-         <button onClick={goForward} disabled={!canGoForward} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-30">
-            <ChevronRight size={18} />
-         </button>
-         <button onClick={navigateUp} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800">
-            <ArrowUp size={18} />
-         </button>
-
-         <div className="flex-1 min-w-0 mx-2">
-            <Breadcrumbs path={currentPath} onNavigate={navigateTo} onNavigateRoot={() => navigateTo('root')} />
-         </div>
-
-         <div className="flex items-center gap-1">
-             {isTrashLocation && files.length > 0 && (
-                <button 
-                  onClick={onEmptyTrash} 
-                  className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 mr-1"
-                  title="Empty Trash"
-                >
-                   <Trash2 size={18} />
+      {/* Enhanced Top Bar */}
+      <div className="flex flex-col flex-shrink-0 bg-white dark:bg-slate-950 z-20 sticky top-0">
+        <div className="flex items-center justify-between px-3 py-3 border-b border-slate-100 dark:border-slate-800/50">
+           {/* Left: Navigation Controls */}
+           <div className="flex items-center gap-2 min-w-0">
+              {onToggleSidebar && (
+                <button onClick={onToggleSidebar} className="md:hidden p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all">
+                   <Menu size={20} />
                 </button>
-             )}
-             <button onClick={onSearch} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800">
-                <Search size={18} />
-             </button>
-             <button onClick={() => setShowFilter(!showFilter)} className={`p-1.5 rounded-lg transition-colors ${showFilter ? 'text-blue-500 bg-blue-100 dark:bg-blue-900/30' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
-                <Filter size={18} />
-             </button>
-             <button onClick={() => setViewMode(viewMode === ViewMode.GRID ? ViewMode.LIST : ViewMode.GRID)} className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800">
-                {viewMode === ViewMode.GRID ? <List size={18} /> : <Grid size={18} />}
-             </button>
-         </div>
+              )}
+              
+              <div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-xl p-0.5">
+                 <button 
+                   onClick={goBack} 
+                   disabled={!canGoBack} 
+                   className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition-all"
+                 >
+                    <ChevronLeft size={18} />
+                 </button>
+                 <button 
+                   onClick={navigateUp} 
+                   className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm transition-all"
+                 >
+                    <ArrowUp size={18} />
+                 </button>
+              </div>
+
+              {/* Breadcrumbs Area */}
+              <div className="flex-1 min-w-0 mx-1">
+                 <Breadcrumbs path={currentPath} onNavigate={navigateTo} onNavigateRoot={() => navigateTo('root')} />
+              </div>
+           </div>
+
+           {/* Right: Actions */}
+           <div className="flex items-center gap-1 pl-2">
+               {isTrashLocation && files.length > 0 && (
+                  <button 
+                    onClick={onEmptyTrash} 
+                    className="p-2 rounded-xl text-red-500 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors mr-1"
+                    title="Empty Trash"
+                  >
+                     <Trash2 size={18} />
+                  </button>
+               )}
+               
+               <button onClick={onSearch} className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                  <Search size={20} />
+               </button>
+               
+               <div className="w-px h-5 bg-slate-200 dark:bg-slate-800 mx-1"></div>
+
+               <button 
+                  onClick={() => setShowFilter(!showFilter)} 
+                  className={`p-2 rounded-xl transition-all ${showFilter ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+               >
+                  <Filter size={20} />
+               </button>
+               
+               <button 
+                  onClick={() => setViewMode(viewMode === ViewMode.GRID ? ViewMode.LIST : ViewMode.GRID)} 
+                  className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+               >
+                  {viewMode === ViewMode.GRID ? <LayoutGrid size={20} /> : <List size={20} />}
+               </button>
+           </div>
+        </div>
+
+        {/* Filter Overlay Area (Relative to Top Bar) */}
+        {showFilter && (
+          <div className="absolute top-full left-0 right-0 p-2 z-30">
+             <SortFilterControl 
+                sortField={sortField} setSortField={setSortField}
+                sortDirection={sortDirection} setSortDirection={setSortDirection}
+                filterType={filterType} setFilterType={setFilterType}
+                filterDate={'ALL'} setFilterDate={() => {}} 
+                filterSize={'ALL'} setFilterSize={() => {}}
+                showHidden={showHidden} setShowHidden={setShowHidden}
+                onClose={() => setShowFilter(false)}
+             />
+          </div>
+        )}
       </div>
 
-      {/* Filter Overlay */}
-      {showFilter && (
-        <div className="absolute top-14 left-2 right-2 z-20">
-           <SortFilterControl 
-              sortField={sortField} setSortField={setSortField}
-              sortDirection={sortDirection} setSortDirection={setSortDirection}
-              filterType={filterType} setFilterType={setFilterType}
-              filterDate={'ALL'} setFilterDate={() => {}} 
-              filterSize={'ALL'} setFilterSize={() => {}}
-              showHidden={showHidden} setShowHidden={setShowHidden}
-              onClose={() => setShowFilter(false)}
-           />
-        </div>
-      )}
       
       {/* File List with Pull to Refresh */}
       <div 

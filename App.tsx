@@ -20,12 +20,13 @@ import SettingsDialog from './components/SettingsDialog';
 import PermissionScreen from './components/PermissionScreen';
 import CompressionModal from './components/CompressionModal';
 import EncryptionDialog from './components/EncryptionDialog';
+import BottomNavigator from './components/BottomNavigator';
 import { InputDialog } from './components/Dialogs';
 import { 
   Menu, Settings, Trash2, Copy, Scissors, 
   Shield, PieChart as ChartIcon, Clipboard, 
   Plus, Smartphone, HardDrive, Clock, Star, RotateCcw,
-  MoreVertical, Lock, Sun, Moon
+  MoreVertical, Lock, Sun, Moon, Home
 } from 'lucide-react';
 
 const VAULT_FOLDER = 'Secure Vault';
@@ -56,6 +57,7 @@ const AppContent: React.FC = () => {
   const filePane = useFilePane('root', isReady);
 
   // --- UI State ---
+  const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: null });
@@ -106,6 +108,7 @@ const AppContent: React.FC = () => {
       }
       if (showStorage) {
         setShowStorage(false);
+        setActiveTab('home'); // Reset tab if closing storage via back
         return;
       }
       if (compressionState.isOpen) {
@@ -118,6 +121,7 @@ const AppContent: React.FC = () => {
       }
       if (modal.type) {
         setModal({ type: null });
+        if (activeTab === 'settings') setActiveTab('home');
         return;
       }
       if (contextMenu) {
@@ -150,8 +154,41 @@ const AppContent: React.FC = () => {
     return () => { listener.then(l => l.remove()); };
   }, [
     previewState, showSearch, showStorage, compressionState.isOpen, encryptionModal.isOpen, 
-    modal.type, contextMenu, sidebarOpen, filePane
+    modal.type, contextMenu, sidebarOpen, filePane, activeTab
   ]);
+
+  // --- Tab Navigation Logic ---
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    
+    if (tabId === 'home') {
+      filePane.navigateTo('root');
+    } else if (tabId === 'files') {
+      filePane.navigateTo('root_internal');
+    } else if (tabId === 'recent') {
+      filePane.navigateTo('recent');
+    } else if (tabId === 'analyze') {
+      setShowStorage(true);
+      // We don't change 'activeTab' here visually for the main pane, but we show overlay
+      // Actually, let's keep it activeTab for visual feedback, overlay handles display
+    } else if (tabId === 'settings') {
+      setModal({ type: 'SETTINGS' });
+    }
+  };
+
+  // Sync tab state with current path
+  useEffect(() => {
+    if (showStorage) return; // Keep analyze tab active if storage is open
+    if (modal.type === 'SETTINGS') return;
+
+    const pathId = filePane.currentPath.length > 0 ? filePane.currentPath[filePane.currentPath.length - 1].id : 'root';
+    
+    if (pathId === 'root') setActiveTab('home');
+    else if (pathId === 'recent') setActiveTab('recent');
+    else if (pathId === 'root_internal' || pathId === 'root_sd' || pathId.includes('/')) setActiveTab('files');
+    
+  }, [filePane.currentPath, showStorage, modal.type]);
+
 
   // Navigate Logic with Vault Protection
   const handleNavigate = (id: string) => {
@@ -463,6 +500,10 @@ const AppContent: React.FC = () => {
         </div>
         
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
+           <button onClick={() => { handleNavigate('root'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+              <Home size={18} className="mr-3" /> Dashboard
+           </button>
+           
            <div className="px-4 pt-4 pb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Drives</div>
            <button onClick={() => { handleNavigate('root_internal'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               <Smartphone size={18} className="mr-3" /> Internal Storage
@@ -492,9 +533,6 @@ const AppContent: React.FC = () => {
            <button onClick={() => { filePane.navigateTo('trash'); setSidebarOpen(false); }} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-500 dark:hover:text-red-400 transition-colors">
               <Trash2 size={18} className="mr-3" /> Recycle Bin
            </button>
-           <button onClick={() => setModal({ type: 'SETTINGS' })} className="flex items-center w-full px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-              <Settings size={18} className="mr-3" /> Settings
-           </button>
         </div>
         
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
@@ -510,7 +548,7 @@ const AppContent: React.FC = () => {
          
          {/* Pane Container */}
          {isVaultProtected ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 pb-20">
                <Lock size={64} className="mb-4 text-slate-300 dark:text-slate-700" />
                <p className="font-bold text-lg mb-2">Vault Locked</p>
                <button onClick={() => setModal({ type: 'AUTH', targetId: VAULT_FOLDER })} className="px-6 py-2 bg-blue-600 text-white rounded-lg">
@@ -518,7 +556,7 @@ const AppContent: React.FC = () => {
                </button>
             </div>
          ) : (
-           <div className="flex-1 flex overflow-hidden pt-[calc(env(safe-area-inset-top))] pb-[calc(env(safe-area-inset-bottom))] gap-2 relative">
+           <div className="flex-1 flex overflow-hidden pt-[calc(env(safe-area-inset-top))] pb-[calc(4rem+env(safe-area-inset-bottom))] gap-2 relative">
               <div className="flex-1 min-w-0 h-full w-full">
                  <FileBrowserPane 
                     paneState={filePane}
@@ -533,7 +571,8 @@ const AppContent: React.FC = () => {
            </div>
          )}
          
-         <div className="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-50 flex flex-col items-end gap-3 pointer-events-none">
+         {/* FAB and Toolbar Overlay */}
+         <div className="absolute bottom-[calc(5rem+env(safe-area-inset-bottom))] right-6 z-30 flex flex-col items-end gap-3 pointer-events-none">
             {clipboard && (
                <button onClick={handlePaste} className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-slate-900 dark:bg-slate-800 border border-slate-700 text-white rounded-full shadow-xl hover:scale-105 transition-transform">
                   <Clipboard size={18} /> <span>Paste {clipboard.mode}</span>
@@ -546,7 +585,7 @@ const AppContent: React.FC = () => {
 
          {/* Selection Toolbar */}
          {filePane.selectedIds.size > 0 && (
-            <div className="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
+            <div className="absolute bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-2 flex items-center gap-1 animate-in slide-in-from-bottom-10">
                <span className="px-3 font-bold text-sm whitespace-nowrap">{filePane.selectedIds.size} selected</span>
                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
                {filePane.currentPath.some(p => p.id === 'trash') ? (
@@ -566,6 +605,8 @@ const AppContent: React.FC = () => {
                <button onClick={() => filePane.setSelectedIds(new Set())} className="px-3 text-xs font-bold uppercase text-slate-400">Cancel</button>
             </div>
          )}
+         
+         <BottomNavigator activeTab={activeTab} onTabChange={handleTabChange} />
       </div>
 
       {/* Overlays */}
@@ -596,13 +637,13 @@ const AppContent: React.FC = () => {
       />
 
       {showStorage && (
-         <StorageAnalyzer onClose={() => setShowStorage(false)} />
+         <StorageAnalyzer onClose={() => { setShowStorage(false); setActiveTab('home'); }} />
       )}
       
       <AuthDialog isOpen={modal.type === 'AUTH'} mode={vaultPinHash ? 'ENTER' : 'CREATE'} onSuccess={handleAuthSuccess} onClose={() => setModal({ type: null })} />
       <SettingsDialog 
         isOpen={modal.type === 'SETTINGS'} 
-        onClose={() => setModal({ type: null })} 
+        onClose={() => { setModal({ type: null }); setActiveTab('home'); }} 
         onResetPin={() => { 
            setVaultPinHash(null); 
            localStorage.removeItem('nova_vault_pin'); 
