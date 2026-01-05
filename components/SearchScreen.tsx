@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { FileNode } from '../types';
 import { fileSystem, SearchOptions } from '../services/filesystem';
-import { getIconForType } from '../constants';
+import { getFileIcon } from '../constants';
 
 interface SearchScreenProps {
   isOpen: boolean;
@@ -45,6 +45,18 @@ const HighlightedText: React.FC<{ text: string; highlight: string }> = ({ text, 
       )}
     </span>
   );
+};
+
+const getResultStyle = (type: string) => {
+  switch (type) {
+    case 'image': return 'bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400';
+    case 'video': return 'bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400';
+    case 'audio': return 'bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400';
+    case 'document': return 'bg-cyan-100 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400';
+    case 'archive': return 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400';
+    case 'folder': return 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500';
+    default: return 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
+  }
 };
 
 const SearchScreen: React.FC<SearchScreenProps> = ({ isOpen, onClose, onNavigate, onReveal }) => {
@@ -139,14 +151,16 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ isOpen, onClose, onNavigate
          ) : (
             <div className="flex flex-col gap-1">
                {results.map((file) => {
-                 const Icon = getIconForType(file.type);
+                 const Icon = getFileIcon(file.name, file.type);
+                 const styleClass = getResultStyle(file.type);
+                 
                  return (
                    <button 
                      key={file.id} 
                      onClick={() => onNavigate(file)}
                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-white dark:hover:bg-slate-900 border border-transparent hover:border-slate-200 dark:hover:border-slate-800 transition-all text-left group"
                    >
-                      <div className="p-2.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                      <div className={`p-2.5 rounded-lg ${styleClass}`}>
                          <Icon size={20} />
                       </div>
                       <div className="flex-1 min-w-0">

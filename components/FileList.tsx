@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { FileNode, ViewMode, SortField } from '../types';
-import { getIconForType } from '../constants';
+import { getFileIcon } from '../constants';
 import { fileSystem } from '../services/filesystem';
 import { 
   MoreVertical, CheckCircle2, Smartphone, HardDrive, 
@@ -20,6 +20,21 @@ const formatSize = (bytes: number) => {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+const getFileStyles = (type: string, isTrash: boolean, isProtected: boolean) => {
+  if (isTrash) return { bg: 'bg-red-100 dark:bg-red-900/20', text: 'text-red-500 dark:text-red-400' };
+  if (isProtected) return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-600 dark:text-amber-500' };
+  
+  switch (type) {
+    case 'folder': return { bg: 'bg-blue-100 dark:bg-blue-500/10', text: 'text-blue-600 dark:text-blue-500' };
+    case 'image': return { bg: 'bg-purple-100 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' };
+    case 'video': return { bg: 'bg-rose-100 dark:bg-rose-900/20', text: 'text-rose-600 dark:text-rose-400' };
+    case 'audio': return { bg: 'bg-amber-100 dark:bg-amber-900/20', text: 'text-amber-600 dark:text-amber-400' };
+    case 'document': return { bg: 'bg-cyan-100 dark:bg-cyan-900/20', text: 'text-cyan-600 dark:text-cyan-400' };
+    case 'archive': return { bg: 'bg-emerald-100 dark:bg-emerald-900/20', text: 'text-emerald-600 dark:text-emerald-400' };
+    default: return { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-500 dark:text-slate-400' };
+  }
 };
 
 interface FileListProps {
@@ -135,10 +150,12 @@ const QuickAction: React.FC<{
 );
 
 const RecentFileItem: React.FC<{ file: FileNode, onClick: () => void }> = ({ file, onClick }) => {
-  const Icon = getIconForType(file.type);
+  const Icon = getFileIcon(file.name, file.type);
+  const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
+
   return (
     <button onClick={onClick} className="flex items-center gap-3 p-3 w-full bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group">
-       <div className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-white dark:group-hover:bg-slate-700 transition-colors">
+       <div className={`p-2.5 rounded-lg transition-colors ${styles.bg} ${styles.text}`}>
           <Icon size={20} strokeWidth={1.5} />
        </div>
        <div className="flex-1 min-w-0">
@@ -160,7 +177,8 @@ const FileItem: React.FC<{
   onDropFile: (sourceId: string, targetFolderId: string) => void;
   isSelectionMode: boolean;
 }> = React.memo(({ file, viewMode, isSelected, onSelect, onOpen, onContextMenu, onDropFile, isSelectionMode }) => {
-  const Icon = getIconForType(file.type);
+  const Icon = getFileIcon(file.name, file.type);
+  const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Drag & Drop ---
@@ -248,11 +266,7 @@ const FileItem: React.FC<{
         )}
         
         <div className="relative mb-2">
-          <div className={`p-3.5 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${
-            file.type === 'folder' 
-               ? (file.isProtected ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500' : 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500') 
-               : (file.isTrash ? 'bg-red-100 dark:bg-red-900/20 text-red-500 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')
-          }`}>
+          <div className={`p-3.5 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text}`}>
             <Icon size={36} strokeWidth={1.5} />
           </div>
           
@@ -301,11 +315,7 @@ const FileItem: React.FC<{
           : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800'
       }`}
     >
-       <div className={`relative p-2.5 rounded-xl flex-shrink-0 ${
-          file.type === 'folder' 
-            ? (file.isProtected ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500' : 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500')
-            : (file.isTrash ? 'bg-red-100 dark:bg-red-900/20 text-red-500 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')
-       }`}>
+       <div className={`relative p-2.5 rounded-xl flex-shrink-0 ${styles.bg} ${styles.text}`}>
           <Icon size={24} strokeWidth={1.5} />
           
           {(file.isEncrypted || file.isProtected) && (
