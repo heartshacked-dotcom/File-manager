@@ -1,13 +1,16 @@
 
 import { 
   Folder, FileImage, FileVideo, FileAudio, FileText, FileArchive, File, 
-  FileCode, FileJson, FileSpreadsheet, FileType2, FileBox
+  FileCode, FileJson, FileSpreadsheet, FileType2, FileBox, Box
 } from 'lucide-react';
 
 export const getFileIcon = (name: string, type: string) => {
   if (type === 'folder') return Folder;
   
   const ext = name.split('.').pop()?.toLowerCase();
+
+  // Explicit APK Check
+  if (ext === 'apk') return Box;
 
   switch (type) {
     case 'image': return FileImage;
