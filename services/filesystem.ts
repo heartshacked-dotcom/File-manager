@@ -15,13 +15,30 @@ const TRASH_FOLDER = ".nova_trash";
 const TRASH_INDEX = "trash_index.json";
 const VAULT_FOLDER = "Secure Vault";
 
-// --- Native Plugin Definition ---
+// --- Native Plugin Definitions ---
 interface StorageCapacityPlugin {
   getStorageInfo(): Promise<{ total: number; free: number; used: number }>;
 }
 
-const StorageCapacity =
-  registerPlugin<StorageCapacityPlugin>("StorageCapacity");
+export interface ThumbnailResult {
+  base64: string;
+  width: number;
+  height: number;
+  duration?: number; // For videos (in ms)
+}
+
+interface ThumbnailPlugin {
+  getThumbnail(options: { 
+    path: string; 
+    type: string; 
+    width?: number; 
+    height?: number; 
+    quality?: number;
+  }): Promise<ThumbnailResult>;
+}
+
+const StorageCapacity = registerPlugin<StorageCapacityPlugin>("StorageCapacity");
+const Thumbnail = registerPlugin<ThumbnailPlugin>("Thumbnail");
 
 // Enum for internal permission tracking
 export enum PermissionStatus {
@@ -883,6 +900,29 @@ class AndroidFileSystem {
     } catch (e: any) {
       throw new Error("Could not open file: " + (e.message || e));
     }
+  }
+
+  // --- Thumbnail Bridge ---
+  async getThumbnail(file: FileNode): Promise<ThumbnailResult> {
+    if (Capacitor.getPlatform() !== "android") {
+      throw new Error("Thumbnails only supported on Android");
+    }
+
+    // Determine type for plugin
+    let type = "image";
+    if (file.name.endsWith(".apk")) type = "apk";
+    else if (file.type === "video") type = "video";
+    else if (file.type === "audio") type = "audio";
+    else if (file.type === "image") type = "image";
+    else throw new Error("Unsupported type");
+
+    return Thumbnail.getThumbnail({
+      path: file.id,
+      type: type,
+      width: 256,
+      height: 256,
+      quality: 70
+    });
   }
 
   private getMimeType(type: string, name: string): string {

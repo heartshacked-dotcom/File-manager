@@ -3,6 +3,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { FileNode, ViewMode, SortField } from '../types';
 import { getFileIcon } from '../constants';
 import { fileSystem } from '../services/filesystem';
+import Thumbnail from './Thumbnail';
 import { 
   MoreVertical, CheckCircle2, Smartphone, HardDrive, 
   Download, Trash2, Lock, ChevronRight, Shield, FileLock,
@@ -162,8 +163,8 @@ const RecentFileItem: React.FC<{ file: FileNode, onClick: () => void }> = ({ fil
   const styles = getFileStyles(file.type, !!file.isTrash, !!file.isProtected);
   return (
     <button onClick={onClick} className="flex items-center gap-3 p-3 w-full bg-transparent hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl transition-colors text-left group">
-       <div className={`p-2.5 rounded-lg transition-colors flex-shrink-0 ${styles.bg} ${styles.text}`}>
-          <Icon size={20} strokeWidth={1.5} />
+       <div className={`w-10 h-10 rounded-lg transition-colors flex-shrink-0 ${styles.bg} ${styles.text} overflow-hidden`}>
+          <Thumbnail file={file} FallbackIcon={Icon} className="w-full h-full" />
        </div>
        <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{file.name}</div>
@@ -244,8 +245,15 @@ const FileItem: React.FC<{
       >
         {isSelected && <div className="absolute top-1 right-1 z-10 text-blue-600 dark:text-blue-400"><CheckCircle2 size={16} fill="currentColor" className="text-white dark:text-slate-900" /></div>}
         
-        <div className={`mb-2 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text} ${config.padding}`}>
-            <Icon size={config.iconSize} strokeWidth={1.5} />
+        {/* Grid Icon Container */}
+        <div className={`mb-2 rounded-2xl transition-transform group-hover:scale-105 shadow-sm ${styles.bg} ${styles.text} ${config.padding} overflow-hidden w-full aspect-square flex items-center justify-center relative`}>
+            {/* Render Thumbnail for Grid */}
+            <Thumbnail 
+              file={file} 
+              FallbackIcon={Icon} 
+              className="w-full h-full absolute inset-0" 
+            />
+            
             {/* Badges */}
             {(file.isEncrypted || file.isProtected) && (
              <div className="absolute -bottom-1 -right-1 flex gap-0.5 z-10">
@@ -256,7 +264,6 @@ const FileItem: React.FC<{
         </div>
         
         <span className={`${config.textSize} font-medium text-center truncate w-full text-slate-700 dark:text-slate-300 px-0.5`}>{file.name}</span>
-        {/* Only show size/date in Medium+ Grid */}
         {config.iconSize >= 36 && (
             <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate w-full text-center mt-0.5">
                {file.type === 'folder' ? formatDate(file.updatedAt) : formatSize(file.size)}
@@ -279,8 +286,12 @@ const FileItem: React.FC<{
            : 'hover:bg-slate-100 dark:hover:bg-slate-800'
         }`}
        >
-          <div className={`flex-shrink-0 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-             {isSelected ? <CheckCircle2 size={config.iconSize} /> : <Icon size={config.iconSize} className={file.type === 'folder' ? styles.text : ''} />}
+          <div className={`flex-shrink-0 w-8 h-8 rounded overflow-hidden flex items-center justify-center ${isSelected ? 'text-blue-600 dark:text-blue-400 bg-transparent' : `${styles.bg} ${styles.text}`}`}>
+             {isSelected ? (
+                <CheckCircle2 size={config.iconSize} /> 
+             ) : (
+                <Thumbnail file={file} FallbackIcon={Icon} className="w-full h-full" />
+             )}
           </div>
           
           <div className={`min-w-0 ${config.textSize} font-medium text-slate-700 dark:text-slate-200 truncate`}>
@@ -312,8 +323,8 @@ const FileItem: React.FC<{
           : 'hover:bg-slate-100 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800'
       }`}
     >
-       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${styles.bg} ${styles.text}`} style={{ padding: config.iconSize > 24 ? '0.75rem' : '0.5rem' }}>
-          <Icon size={config.iconSize} strokeWidth={1.5} />
+       <div className={`relative rounded-xl flex-shrink-0 flex items-center justify-center ${styles.bg} ${styles.text} overflow-hidden`} style={{ width: config.iconSize + 16, height: config.iconSize + 16 }}>
+          <Thumbnail file={file} FallbackIcon={Icon} className="w-full h-full" />
        </div>
 
        <div className="flex-1 min-w-0 flex flex-col justify-center">
@@ -323,7 +334,6 @@ const FileItem: React.FC<{
            </h4>
            {file.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 font-medium">Hidden</span>}
          </div>
-         {/* Subtitle logic varies by list size */}
          {config.iconSize >= 24 && (
              <div className={`flex items-center gap-3 ${config.subTextSize} text-slate-500 dark:text-slate-500 mt-0.5`}>
                 {file.isTrash ? (
@@ -384,10 +394,7 @@ const FileList: React.FC<FileListProps> = React.memo(({
   if (isRootScreen) {
      const internalStorage = files.find(f => f.id === 'root_internal');
      const sdCard = files.find(f => f.id === 'root_sd');
-     
-     // SD Card Visibility Check: Only show if capacity > 0 (Proxy for detection)
      const showSdCard = sdCard && (sdCard.capacity || 0) > 0;
-
      const downloads = files.find(f => f.id === 'downloads_shortcut');
      const trash = files.find(f => f.id === 'trash');
      const vault = files.find(f => f.name === 'Secure Vault');
@@ -399,8 +406,7 @@ const FileList: React.FC<FileListProps> = React.memo(({
 
      return (
         <div className="pt-2 pb-32 space-y-6">
-           
-           {/* Storage Cards - Improved Visibility and Layout */}
+           {/* Storage Cards */}
            <div className="w-full overflow-x-auto no-scrollbar snap-x py-2">
              <div className={`flex gap-4 px-4 ${showSdCard ? 'min-w-max' : 'w-full'}`}>
                 {internalStorage && (
@@ -466,22 +472,19 @@ const FileList: React.FC<FileListProps> = React.memo(({
   }
 
   // --- STANDARD FILE LIST RENDER ---
-  
   const config = getViewConfig(viewMode);
 
   return (
     <div className="flex flex-col h-full pb-32">
-      {/* Detail Header */}
       {config.type === 'DETAIL' && (
          <div className={`grid grid-cols-[auto_1fr_auto_auto] gap-4 items-center ${config.padding} text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur z-10`}>
-            <div className="w-6"></div> {/* Icon placeholder */}
+            <div className="w-8"></div>
             <div>Name</div>
             <div className="hidden sm:block w-24 text-right">Date</div>
             <div className="w-20 text-right">Size</div>
          </div>
       )}
 
-      {/* Items Container */}
       <div className={`flex-1 p-2 ${config.type === 'GRID' ? `grid ${config.gridCols} gap-2` : 'flex flex-col gap-1'}`}>
         {files.map(file => (
           <FileItem 
