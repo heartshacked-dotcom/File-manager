@@ -1,44 +1,53 @@
+import { registerPlugin, Capacitor } from "@capacitor/core";
 
-import { registerPlugin } from '@capacitor/core';
-
-// Define the Native Plugin Interface
+// Native Plugin Interface
 export interface StoragePermissionPlugin {
-  check(): Promise<{ granted: boolean }>;
-  request(): Promise<void>;
+  isExternalStorageManager(): Promise<{ granted: boolean }>;
+  openAllFilesAccessSettings(): Promise<void>;
 }
 
-// Register the plugin (Must match the Java @CapacitorPlugin name)
-const StoragePermissionNative = registerPlugin<StoragePermissionPlugin>('StoragePermissionPlugin');
+// Plugin registration
+export const StoragePermissionNative =
+  registerPlugin<StoragePermissionPlugin>("StoragePermission");
 
 export class StoragePermission {
   /**
-   * Checks if the app has true "All Files Access" (MANAGE_EXTERNAL_STORAGE).
+   * Checks if the app has "All Files Access" (MANAGE_EXTERNAL_STORAGE).
+   * Note: This only applies to Android. Returns true on iOS/Web for logic compatibility.
    */
   static async isExternalStorageManager(): Promise<{ granted: boolean }> {
-    // Web/Dev Fallback
-    if (typeof window !== 'undefined' && !(window as any).Capacitor?.isNative) {
-       console.warn("StoragePermission: Web environment detected, simulating granted.");
-       return { granted: true };
+    const platform = Capacitor.getPlatform();
+
+    if (platform !== "android") {
+      console.warn(
+        `StoragePermission: ${platform} platform does not support this permission. Defaulting to true.`
+      );
+      return { granted: true };
     }
 
     try {
-      return await StoragePermissionNative.check();
+      return await StoragePermissionNative.isExternalStorageManager();
     } catch (e) {
-      console.error("StoragePermissionPlugin missing or failed", e);
+      console.error("StoragePermission: Native call failed", e);
       return { granted: false };
     }
   }
 
   /**
-   * Opens the specific Android system settings page for All Files Access.
+   * Opens Android "All Files Access" settings page.
+   * On Android 16, this directs the user to the specific toggle for your app.
    */
-  static async openAllFilesAccessSettings(): Promise<void> {
-    if (typeof window !== 'undefined' && !(window as any).Capacitor?.isNative) return;
+  static async openAllFilesAccessSettings(): Promise<boolean> {
+    if (Capacitor.getPlatform() !== "android") {
+      return false;
+    }
 
     try {
-      await StoragePermissionNative.request();
+      await StoragePermissionNative.openAllFilesAccessSettings();
+      return true;
     } catch (e) {
-      console.error("Failed to request native permission", e);
+      console.error("StoragePermission: Could not open settings", e);
+      return false;
     }
   }
 }
