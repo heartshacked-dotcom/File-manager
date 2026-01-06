@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { 
   ArrowLeft, ChevronRight, Folder, AlertCircle, File, 
@@ -20,13 +20,14 @@ const COLORS = {
   document: '#3b82f6', // blue-500
   archive: '#10b981', // emerald-500
   unknown: '#94a3b8', // slate-400
-  folder: '#64748b'   // slate-500
+  folder: '#64748b',  // slate-500
+  system: '#334155'   // slate-700
 };
 
 const formatSize = (bytes: number) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
@@ -36,6 +37,7 @@ const StorageAnalyzer: React.FC<StorageAnalyzerProps> = ({ onClose }) => {
   const [pathNodes, setPathNodes] = useState<FileNode[]>([]);
   const [data, setData] = useState<StorageAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [realStorage, setRealStorage] = useState<{ used: number; total: number } | null>(null);
 
   // Load Analysis
   useEffect(() => {
@@ -49,6 +51,17 @@ const StorageAnalyzer: React.FC<StorageAnalyzerProps> = ({ onClose }) => {
         // Fetch analysis
         const result = await fileSystem.analyzeStorage(currentPathId);
         setData(result);
+
+        // Fetch Real-Time Storage if at root
+        if (currentPathId === 'root_internal' || currentPathId === 'root') {
+          try {
+             const info = await fileSystem.getStorageUsage();
+             if (info.total > 0) setRealStorage(info);
+             else setRealStorage(null);
+          } catch(e) { setRealStorage(null); }
+        } else {
+          setRealStorage(null);
+        }
       } catch (e) {
         console.error("Analysis failed", e);
       } finally {
@@ -59,14 +72,33 @@ const StorageAnalyzer: React.FC<StorageAnalyzerProps> = ({ onClose }) => {
   }, [currentPathId]);
 
   // Chart Data Preparation
-  const chartData = data ? [
-    { name: 'Images', value: data.typeBreakdown.image || 0, color: COLORS.image },
-    { name: 'Videos', value: data.typeBreakdown.video || 0, color: COLORS.video },
-    { name: 'Audio', value: data.typeBreakdown.audio || 0, color: COLORS.audio },
-    { name: 'Docs', value: data.typeBreakdown.document || 0, color: COLORS.document },
-    { name: 'Archives', value: data.typeBreakdown.archive || 0, color: COLORS.archive },
-    { name: 'Other', value: data.typeBreakdown.unknown || 0, color: COLORS.unknown },
-  ].filter(i => i.value > 0) : [];
+  const chartData = useMemo(() => {
+    if (!data) return [];
+
+    const items = [
+      { name: 'Images', value: data.typeBreakdown.image || 0, color: COLORS.image },
+      { name: 'Videos', value: data.typeBreakdown.video || 0, color: COLORS.video },
+      { name: 'Audio', value: data.typeBreakdown.audio || 0, color: COLORS.audio },
+      { name: 'Docs', value: data.typeBreakdown.document || 0, color: COLORS.document },
+      { name: 'Archives', value: data.typeBreakdown.archive || 0, color: COLORS.archive },
+      { name: 'Other', value: data.typeBreakdown.unknown || 0, color: COLORS.unknown },
+    ];
+
+    // If we have real storage info, calculate "System" usage (unscanned space)
+    if (realStorage && realStorage.used > data.totalSize) {
+       const systemSize = realStorage.used - data.totalSize;
+       // Only show if meaningful (> 10MB)
+       if (systemSize > 10 * 1024 * 1024) {
+          items.push({ name: 'System', value: systemSize, color: COLORS.system });
+       }
+    }
+
+    return items.filter(i => i.value > 0).sort((a, b) => b.value - a.value);
+  }, [data, realStorage]);
+
+  const totalDisplaySize = realStorage ? realStorage.used : (data?.totalSize || 0);
+  const totalCapacity = realStorage ? realStorage.total : 0;
+  const usedPercentage = totalCapacity > 0 ? Math.round((totalDisplaySize / totalCapacity) * 100) : 0;
 
   return (
     <div className="fixed inset-0 z-[60] bg-white dark:bg-slate-950 flex flex-col animate-in slide-in-from-bottom-full duration-300">
@@ -121,21 +153,44 @@ const StorageAnalyzer: React.FC<StorageAnalyzerProps> = ({ onClose }) => {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xl font-bold text-slate-800 dark:text-slate-100">{formatSize(data.totalSize)}</span>
-                    <span className="text-[10px] text-slate-500 uppercase font-medium">Total</span>
+                    <span className="text-xl font-bold text-slate-800 dark:text-slate-100">
+                      {realStorage ? `${usedPercentage}%` : formatSize(data.totalSize)}
+                    </span>
+                    <span className="text-[10px] text-slate-500 uppercase font-medium">
+                      {realStorage ? 'Used' : 'Total'}
+                    </span>
                   </div>
                </div>
 
-               <div className="flex-1 w-full grid grid-cols-2 gap-3">
-                  {chartData.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between p-3 bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800">
-                       <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                          <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{item.name}</span>
+               <div className="flex-1 w-full space-y-4">
+                  {realStorage && (
+                    <div className="w-full">
+                       <div className="flex justify-between text-xs mb-1.5">
+                          <span className="text-slate-500 font-medium">Storage Usage</span>
+                          <span className="text-slate-700 dark:text-slate-300 font-mono">
+                             {formatSize(realStorage.used)} / {formatSize(realStorage.total)}
+                          </span>
                        </div>
-                       <span className="text-xs font-mono text-slate-500">{formatSize(item.value)}</span>
+                       <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                             className="h-full bg-blue-500 rounded-full transition-all duration-1000" 
+                             style={{ width: `${usedPercentage}%` }} 
+                          />
+                       </div>
                     </div>
-                  ))}
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                     {chartData.map((item) => (
+                       <div key={item.name} className="flex items-center justify-between p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-2">
+                             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                             <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{item.name}</span>
+                          </div>
+                          <span className="text-xs font-mono text-slate-500">{formatSize(item.value)}</span>
+                       </div>
+                     ))}
+                  </div>
                </div>
             </div>
 
@@ -156,7 +211,6 @@ const StorageAnalyzer: React.FC<StorageAnalyzerProps> = ({ onClose }) => {
                           onClick={() => setCurrentPathId(folder.id)}
                           className="w-full group bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-900 hover:shadow-md transition-all relative overflow-hidden text-left"
                         >
-                           {/* Progress Bar Background */}
                            <div className="absolute left-0 top-0 bottom-0 bg-blue-50 dark:bg-blue-900/10 transition-all duration-500" style={{ width: `${percent}%` }}></div>
                            
                            <div className="relative flex items-center justify-between z-10">
